@@ -1,0 +1,182 @@
+---
+title: "clusters "
+output: html_document
+date: "2023-01-18"
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+# this code will use the stats::kmeans() algorithm to identify clusters appearing in 
+# weekly crab spider counts.
+
+```
+
+
+
+```{r cluster-intro}
+
+library(ggplot2)
+library(gridExtra)
+
+library(dplyr)
+
+setwd("/Users/rcphelps/code/thesis/journalArticle/arXiv-preprint/code")
+
+# source("./code/k-means.R")
+
+
+source.url <- c("https://raw.githubusercontent.com/cordphelps/ampelos/master/data/bugs.csv")
+bugs.tibl <- as_tibble(read.csv(source.url, header=TRUE, row.names=NULL) )
+
+# remove all bugs except clab spider
+bugs.tibl <- bugs.tibl %>% 
+  dplyr::select(-Agapostemon.sp....green..native.bee., -Bombus.californicus..bumble., -Braconid.wasp, -checkerspot.butterfly, -Diabrotica.undecimpunctata..Cucumber.Beetle., -Diptera..Agromyzidae..leafminer.., -Halictus.sp....3.part..native.bee., -Honey.Bee, -ladyBug, -Lygus.hesperus..western.tarnished.plant.bug., -Orius..pirate.bug., -Osmia.sp...native.bee., -other, -pencilBug, -pentamonidae...stinkBug., -Pyralidae..Snout.Moth., -spider.other) 
+
+# separate into SNH and control transect records
+bugsSNH.tibl <- bugs.tibl %>%
+  dplyr::filter(transect=='oakMargin')
+  
+bugsControl.tibl <- bugs.tibl %>%
+  dplyr::filter(transect=='control')
+
+bugsControlByWeekAndPosition.tibl <- bugsControl.tibl %>%
+  dplyr::group_by(week, positionX) %>%
+  dplyr::summarize(crabSpiders=sum(Thomisidae..crab.spider.), .groups='keep'  )
+
+# the result is, for each positionX in each week, crabSpider counts are calculated
+#
+#  week   positionX   crabSpiders
+
+######## testing ##########
+
+# get data for week 23
+week23test.tibl <- bugsControlByWeekAndPosition.tibl %>%
+  dplyr::filter(week==23)
+
+week23test.tibl <- week23test.tibl %>% ungroup() %>% dplyr::select(-week)
+
+# prior to identifying clusters, the x and y coordinate ranges should be scaled 
+# (normalized) to prevent one axis (variable) from having an undue influence on 
+# the assessment of clusters.
+# Practical Statistics for Data Scientists: 50 Essential Concepts 1st Edition
+# by Peter Bruce, Andrew Bruce page 263
+# O'Reilly Media; 1st edition (June 13, 2017) ISBN-13 978-1491952962
+# (also https://shirinsplayground.netlify.app/2021/03/kmeans_101/ Principle 3)
+scaled.tibl <- as_tibble(scale(week23test.tibl))
+
+set.seed(20)
+
+# kmeans() wants to evaluate groups of points specified in x,y coordinates
+# and assign them to clusters. 
+
+
+clusters.kmeans <- scaled.tibl %>% 
+  dplyr::select(positionX, crabSpiders) %>% 
+  kmeans(centers = 3, iter.max = 100, nstart = 5)
+
+week23test.tibl$cluster <- as.factor(clusters.kmeans$cluster)
+
+# the kmeans return object encapsulates numerous params including 
+# 'cluster' (an arbitrary ID) 
+# so, to compare clusters across weeks, we need to re-assign cluster IDs
+# based on rank. high-to-low or low-to-high does not matter. 
+
+# ignore>  week23test.tibl <- week23test.tibl %>%
+# ignore>    mutate(withinss = ifelse(cluster == 1, clusters.kmeans$withinss[[1]], 
+# ignore>                             ifelse(cluster == 2, clusters.kmeans$withinss[[2]],
+# ignore>                              ifelse(cluster == 3, clusters.kmeans$withinss[[3]],
+# ignore>                             0))))
+
+# notice that withinss (and therefore the  cluster IDs) is not necessarily ordered
+# by magnitude.
+# better logic to enable cluster comparison across weeks:
+#
+# check cluster assignments for positions 1-2-3,  4-5-6, 8-9-10
+# I propose that positions 1-2-3 will likely be in the same cluster
+# as will positions 8-9-10.
+#
+# for positions 1-2-3 (expected typical cluster ID is '1')
+# if "no matches" then no cluster assignment changes
+# if at least 2 matches of '1', then no cluster assignment changes
+# if at least 2 matches of '3', 
+#                             change every instance (for all positions) of '3' to '1', 
+#                             change every previous instance of '1' to '3'
+# if at least 2 matches of '2', 
+#                             change every instance (for all positions) of '2' to '1', 
+#                             change every previous instance of '1' to '2'
+# 
+# for positions 8-9-10 (expected typical cluster ID is '3')
+# if "no matches" then no cluster assignment changes
+# if at least 2 matches of '3', then no cluster assignment changes
+# if at least 2 matches of '2', 
+#                             change every instance (for all positions) of '2' to '3', 
+#                             change every previous instance of '3' to '2'
+# if at least 2 matches of '1', then no changes (this probably means that the clusters 
+# are totally scrambled)
+# 
+# note that this logic breaks if the true cluster for both groups 1-2-3 and 
+# 8-9-10 is '1' or '3' (very unlikely)
+
+
+# get the cluster vector
+original.cluster.list <- clusters.kmeans$cluster
+
+# create lists capturing the original positions of 1, 2, and 3
+ones.list <- replace(original.cluster.list, original.cluster.list != 1, 0)
+twos.list <- replace(original.cluster.list, original.cluster.list != 2, 0)
+threes.list <- replace(original.cluster.list, original.cluster.list != 3, 0)
+# ones.list + twos.list + threes.list = original.scan.list
+
+# are there at least 2 matches of '3' in position 1-2-3 ?
+if (sum(original.cluster.list[1:3] == 3) > 1) {
+  # there are multiple 3s in the first 3 positions, swap 3s all 1s
+  threes.list <- replace(threes.list, threes.list==3, 1)
+  ones.list <- replace(ones.list, ones.list==1, 3)
+# are there at least 2 matches of '2' in position 1-2-3 ?  
+} else if (sum(original.cluster.list[1:3] == 2) > 1) {
+  # there are multiple 2s in the first 3 positions, change all 2s to 1s
+  twos.list <- replace(twos.list, twos.list==2, 1)
+  ones.list <- replace(ones.list, ones.list==1, 2)
+} 
+
+# are there at least 2 matches of '2' in position 8-9-10 ?
+if (sum(original.cluster.list[8:10] == 2) > 1) {
+  # there are multiple 2s in the last 3 positions, change all 2s to 3s
+  twos.list <- replace(twos.list, twos.list==2, 3)
+  threes.list <- replace(threes.list, threes.list==3, 2)
+} 
+
+revised.scan.list <- ones.list + twos.list + threes.list
+
+original.cluster.list
+revised.scan.list
+
+#
+#  week   positionX   crabSpiders   cluster (a factor)  
+#
+#   23        4            1              1             
+#   23       16            5              1           
+#   23       32            5              1          
+#   23       48            6              1          
+#   23       64            1              3          
+#   23       80            6              3          
+#   23      100            7              3          
+#   23      130            8              2          
+#   23      160            1              2             
+#   23      200            5              2            
+#
+
+# 
+
+	clusterVector <- week23test.tibl %>%
+   					select(cluster) %>%
+   					unique() %>%
+   					.$cluster
+	
+	
+	
+```
+
+

@@ -1,0 +1,98 @@
+---
+title: "ampelos"
+output: github_document
+---
+
+
+
+
+
+```{r, echo=T, message=F, warning=F}
+
+library(ggplot2)
+library(gridExtra)
+
+library(dplyr)
+
+setwd("/Users/rcphelps/code/thesis/ampelos")
+
+source("./code/k-means.R")
+source("./code/jaccard-similarity.R")
+
+source.url <- c("https://raw.githubusercontent.com/cordphelps/ampelos/master/data/bugs.csv")
+bugs.df <- read.csv(source.url, header=TRUE, row.names=NULL)
+
+
+test.df <- as.data.frame(do.call(rbind, list(
+                list(1,0,3),
+                list(0,0,0),
+                list(0,0,3),
+                list(1,0,3),
+                list(1,2,0),
+                list(1,2,3),
+                list(1,0,0),
+                list(1,0,0),
+                list(1,0,3)
+                 ), quote=FALSE) )
+
+
+```
+
+
+```{r}
+
+clusterNumber <- 3
+df <- bugs.df
+species <- "Thomisidae..crab.spider."
+
+dataList <- buildClustersByWeek(df, t="control", species="Thomisidae..crab.spider.", cn=clusterNumber)
+
+kmPlot(list=dataList, transectText="control")
+
+df <- bugs.df
+dataList <- buildClustersByWeek(df, t="oakMargin", species="Thomisidae..crab.spider.", cn=clusterNumber)
+
+kmPlot(list=dataList, transectText="oakMargin")
+
+```
+
+
+
+
+```{r}
+
+
+dataList <- list()
+
+if (FALSE) {
+dataList[[1]] <- kmReduce(bugs.df, 
+                 quo("control"), quo(28), quo(Thomisidae..crab.spider.),
+                 28)
+
+dataList[[2]] <- kmReduce(bugs.df, 
+                 quo("control"), quo(29), quo(Thomisidae..crab.spider.),
+                 29)
+
+dataList[[3]] <- kmReduce(bugs.df, 
+                 quo("control"), quo(30), quo(Thomisidae..crab.spider.),
+                 30)
+
+clusterNumber <- 3
+dataList[[1]] <- kmBuildClusters(dataList[[1]], clusterNumber)
+dataList[[2]] <- kmBuildClusters(dataList[[2]], clusterNumber)
+dataList[[3]] <- kmBuildClusters(dataList[[3]], clusterNumber)
+
+
+
+kmPlot(dataList, "control")
+
+}
+
+
+
+
+```
+
+
+
+
