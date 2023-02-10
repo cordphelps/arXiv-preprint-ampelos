@@ -40,21 +40,31 @@ bugs.tibl <- bugs.tibl %>%
 
 ```{r}
 
-	clusters.list <- list()
-	clusters.tibl <- tibble::tibble('defaultColumn', .rows = 10)
+
+	
+	# 11 *unique* weeks are expected to satisfy the design of kmPlotNew()
 	weeks.list <- getWeeks(bugs.tibl)
 
+
+	
+	whichData <- bugs.tibl
+	# two transects : 'control' and 'oakMargin' (= semi-natural habitat / SNH)
+	whichTransect <- 'oakMargin'
+	# two trap collection time periods : 'am' and 'pm'
+	whichTime <- 'xm'
+
+	clusters.list <- list()
+	clusters.tibl <- tibble::tibble('defaultColumn', .rows = 10)
+	
 		for (i in 1:length(weeks.list)) {
 
-		  if (weeks.list[[i]] < 33) {    # data becomes too sparse to cluster
-			  currentWeek <- weeks.list[[i]]
-        c.tibl <- assignClusters(week=currentWeek, transect='control',
-                                 time='pm', tibble=bugs.tibl, debug=FALSE)
+			  # currentWeek <- weeks.list[[i]]
+        temp.tibl <- assignClusters(week=weeks.list[[i]], transect = whichTransect,
+                                 time=whichTime, tibble=whichData, debug=TRUE)
 
-        clusters.tibl <- dplyr::bind_cols(clusters.tibl, c.tibl)
+        clusters.tibl <- dplyr::bind_cols(clusters.tibl, temp.tibl)
                                           
 		  }
-		}
 	
 	# cleanup
 	# set cluster integers to 'factors' so that ggplot
@@ -66,7 +76,7 @@ bugs.tibl <- bugs.tibl %>%
 	
 
   
-	kmPlotNew(tibble = clusters.tibl, transectText="control", time="pm")
+	kmPlotNew(tibble = clusters.tibl, transectText = whichTransect, timeText = whichTime)
 	  
 ```
 
@@ -74,7 +84,7 @@ bugs.tibl <- bugs.tibl %>%
 ```{r}
 
 
-kmPlotNew <- function(tibble, transectText, time) {
+kmPlotNew <- function(tibble, transectText, timeText) {
 
 	# build a plot that represents weekly clusters (1:3) by vineyard 
   # position (1:10)
@@ -86,16 +96,27 @@ kmPlotNew <- function(tibble, transectText, time) {
   #          rows are weekly cluster assignments as factors (1:3) 
   #          and row position as character (1:10) (there are 10 rows)
   #
-  # weeks : a list, chr[1:10] "week23" "week24" ... "week32"
+  # weeks : a list, chr[1:10] "week23" "week24" ... "week34"
   # transectText :  text for informational subtitle content
   # time : text for informational subtitle content indicating 'am' or 'pm'
   
-  # get a list of the week labels
-  weeks <- colnames(tibble)
+  if (transectText == 'oakMargin') {
+    # adjust for source data ambiguity
+    transectText <- 'SNH'
+  }
   
-  clusterColors = c("3" = "blue", "2" = "green", "1" = "red")
+  captionText <- paste("crab spider clusters\n", 
+                       "transect: ", transectText, "\ndaytime: ", timeText, sep="")
+  
+  # get a list of the week labels ('weekXX')
+  weeks <- colnames(tibble)
+  # get a list of week IDs ('integers')
+  weekID.list <- disectWeeks(w=weeks)
+  
+  
+  clusterColors = c("3" = "blue", "2" = "green", "1" = "red", "0" = '#FFFFFF')
 
-	ggplot(data = clusters.tibl) + 
+	ggplot(data = tibble) + 
 
   	geom_point(aes(y = position, x = weeks[[1]], fill = week23),  
   		         shape = 21, size=5) +
@@ -126,6 +147,9 @@ kmPlotNew <- function(tibble, transectText, time) {
 	  
 	  geom_point(aes(y = position, x = weeks[[10]], fill = week32),  
   		         shape = 21, size=5) +
+	  
+	  geom_point(aes(y = position, x = weeks[[11]], fill = week34),  
+  		         shape = 21, size=5) +
 
 	  scale_fill_manual(values = clusterColors, 
 	                    limits = names(clusterColors),
@@ -133,34 +157,37 @@ kmPlotNew <- function(tibble, transectText, time) {
 	
     expand_limits(y=c(1,10)) +
     scale_y_continuous(breaks = seq(min(1), max(10), by = 1)) +
-
-    # Set scale limits ('zoom' function; designed to exclude existing data)
-    expand_limits(x=c(22,34)) +    # enlarge the range of the axis
-    scale_x_continuous(breaks=seq(22,34,2)) +         # log, square-root, reverse....
+	  
+	  scale_x_discrete(breaks=weeks, labels=weekID.list) +
+    #expand_limits(x=c(22,34)) +    # enlarge the range of the axis
+    #scale_x_discrete(breaks=seq(22,34,2)) +         # log, square-root, reverse....
 
     geom_hline(yintercept=5.5) +
     geom_hline(yintercept=8.5) +
 
     coord_fixed(ratio=1) + # control the aspect ratio
 
-    # guide_legend(title="clusters") +
-    guides(fill=guide_legend(title="clusters")) +
-
-    labs(x="week number", y="trap position", 
-        caption = paste("crab spider clusters\n", "transect: ", transectText, ", 
-                        daytime: ", 
-                        time,  "\n(data for weeks 33-34 is too sparse)", sep="") ) +
+    labs(x="week number", y="trap position", caption = captionText ) +
 
   	theme_bw() +
     
-    theme(legend.title = element_blank(),
-          legend.spacing.y = unit(0, "mm"), 
-          #legend.position=c(.9,.7),
-          legend.justification=c(1,0),
+	  # axis.title.x=element_text(angle=45, vjust=0.5),
+	  # axis.text = element_text(colour = 1, size = 12),
+	  #     legend.spacing.y = unit(0, "mm"), 
+	  #     legend.title = element_blank(),
+    #     legend.justification=c(1,0),
+    #     legend.background = element_blank(),
+    #     legend.box.background = element_rect(colour = "black")
+    #     guide_legend(title="clusters") +
+    #     guides(fill=guide_legend(title="clusters")) +
+	  #     aspect.ratio = 1, 
+	  
+    theme(
+          axis.text.x = element_text(angle = 45),
           panel.border = element_rect(colour = "black", fill=NA),
-          aspect.ratio = 1, axis.text = element_text(colour = 1, size = 12),
-          legend.background = element_blank(),
-          legend.box.background = element_rect(colour = "black")) 
+          legend.position="bottom",
+          legend.title = element_blank()
+          ) 
 
 }
 
@@ -181,6 +208,80 @@ getWeeks <- function(data) {
 
   return(weeks.vector)
 	
+}
+
+disectWeeks <- function(w) {
+  
+  # get a vector of weeks by chopping the list of week labels
+  # 
+  
+  weeks.vector <- list()
+
+		for (i in 1:length(w)) {
+
+		  currentWeek <- substring(w[[i]], 5, 6)
+      weeks.vector[[i]] <- currentWeek
+                               
+		  }
+
+  return(weeks.vector)
+	
+}
+
+enoughData <- function(tibble, debug) {
+  
+  # check to see if there is enough data (non-zero spider counts)
+  # to assign 3 clusters with kmeans() 
+  
+  # tibble input: for a specific week, spider counts for each positionX
+  #
+  #  week   positionX   crabSpiders
+  
+  
+  
+#             non-zero (of 11) weekly positional spider counts
+#           (if count < 2,  clusters of 3 cannot be generated)
+#
+#  week  'oakMargin'+'am'  'oakMargin'+'pm' 'control'+'am' 'control'+'pm'
+#         
+#   23         5               10                8             11
+#   24        11               11               11             11
+#   25         9                9               10             10
+#   26         9                9                7              9        
+#   27         6                6                4              5
+#   28         9               10                7              8
+#   29         6                9                8              6
+#   30         6                4                7              8
+#   31         4                6                7              4
+#   32         3                6                5              4
+#   34         1                2                2              4
+
+# code to generate the table above (this is the template for enoughData() )
+if (FALSE) {
+  zero.tibl <- bugs.tibl %>%
+    dplyr::filter(transect=='oakMargin')  %>%
+    dplyr::filter(time=='am') %>%
+    dplyr::select(-transect, -position, -date, -time, -julian) %>%
+    dplyr::group_by(week, positionX) %>%
+    dplyr::summarize(crabSpiders=sum(Thomisidae..crab.spider.), .groups='keep')
+
+  nonZeroPositions <- list()
+  for (i in 1:length(weeks.list)) {
+     zeroPositions <- zero.tibl %>% 
+      filter(week==weeks.list[[i]] & crabSpiders == 0) %>% nrow()
+    nonZeroPositions[[i]] <- 11 - zeroPositions
+  }
+  print(nonZeroPositions)
+}
+  
+    zeroCounts <- tibble %>% filter(crabSpiders == 0) %>% nrow()
+
+    if (zeroCounts > 9) {
+      return(FALSE)
+    }
+    else {
+      return(TRUE)
+    }
 }
 
 assignClusters <- function(week, transect, time, tibble, debug) {
@@ -262,12 +363,22 @@ assignClusters <- function(week, transect, time, tibble, debug) {
   # cluster assignment    2 2 2 1 1 1 1 3 3 3
   # (this outcome is possible.....)
 
-  bugsByWeek.tibl <- tibble %>%
-    dplyr::filter(transect=={{transect}})  %>%
-    dplyr::filter(time=={{time}}) %>%
-    dplyr::select(-transect, -position, -date, -time, -julian) %>%
-    dplyr::group_by(week, positionX) %>%
-    dplyr::summarize(crabSpiders=sum(Thomisidae..crab.spider.), .groups='keep'  )
+  # allow all data to be specified
+  if (time == 'am' | time == 'pm') {
+    bugsByWeek.tibl <- tibble %>%
+      dplyr::filter(transect=={{transect}})  %>%
+      dplyr::filter(time=={{time}}) %>%
+      dplyr::select(-transect, -position, -date, -time, -julian) %>%
+      dplyr::group_by(week, positionX) %>%
+      dplyr::summarize(crabSpiders=sum(Thomisidae..crab.spider.), .groups='keep'  )
+  }
+  else {
+    bugsByWeek.tibl <- tibble %>%
+      dplyr::filter(transect=={{transect}})  %>%
+      dplyr::select(-transect, -position, -date, -time, -julian) %>%
+      dplyr::group_by(week, positionX) %>%
+      dplyr::summarize(crabSpiders=sum(Thomisidae..crab.spider.), .groups='keep'  )
+  }
   
   if (FALSE) {
   bugs.tibl %>%
@@ -282,124 +393,144 @@ assignClusters <- function(week, transect, time, tibble, debug) {
   #
   #  week   positionX   crabSpiders
 
-  # get week's data
+  # isolate the week's data
   week.tibl <- bugsByWeek.tibl %>%
-  dplyr::filter(week=={{week}})
-  week.tibl <- week.tibl %>% ungroup() %>% dplyr::select(-week)
+                  dplyr::filter(week=={{week}}) %>%
+                  ungroup() %>% dplyr::select(-week)
   
-  # note: base::scale() is used to ensure that the original x (spider counts)
-  # and y (trap position) axis scales do not skew the cluster assessment
-  scaled.tibl <- as_tibble(scale(week.tibl))
-
-  set.seed(20)
-
-  clusters.kmeans <- scaled.tibl %>% 
-    dplyr::select(positionX, crabSpiders) %>% 
-    kmeans(centers = 3, iter.max = 500, nstart = 3)
-
-
-  # get the cluster vector
-  original.cluster.list <- clusters.kmeans$cluster
-
-  # create lists capturing the original positions of 1, 2, and 3
-  ones.list <- replace(original.cluster.list, original.cluster.list != 1, 0)
-  twos.list <- replace(original.cluster.list, original.cluster.list != 2, 0)
-  threes.list <- replace(original.cluster.list, original.cluster.list != 3, 0)
-  # ones.list + twos.list + threes.list = original.scan.list
-  orig.ones.list <- ones.list
-  orig.twos.list <- twos.list
-  orig.threes.list <- threes.list
-
-  # are there at least 2 matches of '3' in position 1-2-3 ?
-  if (sum(original.cluster.list[1:3] == 3) > 1) {
-    # there are multiple 3s in the first 3 positions, swap 3s all 1s
-    ones.list <- replace(orig.threes.list, orig.threes.list==3, 1)
-    twos.list <- replace(orig.twos.list, orig.twos.list==2, 2)
-    threes.list <- replace(orig.ones.list, orig.ones.list==1, 3)
-  # are there at least 2 matches of '2' in position 1-2-3 ?  
-  } else if (sum(original.cluster.list[1:3] == 2) > 1) {
-    # there are multiple 2s in the first 3 positions, change all 2s to 1s
-    ones.list <- replace(orig.twos.list, orig.twos.list==2, 1)
-    twos.list <- replace(orig.ones.list, orig.ones.list==1, 2)
-    threes.list <- replace(orig.threes.list, orig.threes.list==3, 3)
-    print("NOT")
-  } 
-
-  revised.scan.list <- ones.list + twos.list + threes.list
+  # verify that there is enough data to make 3 clusters
+  if (enoughData(tibble=week.tibl, debug=debug) == TRUE) {
+    
+    # build the clusters
   
-  
-  new.twos.list <- replace(revised.scan.list, revised.scan.list != 2, 0)
-  new.threes.list <- replace(revised.scan.list, revised.scan.list != 3, 0)
+    # note: base::scale() is used to ensure that the original x (spider counts)
+    # and y (trap position) axis scales do not skew the cluster assessment
+    scaled.tibl <- as_tibble(scale(week.tibl))
 
-  if (FALSE) {
-    original.cluster.list
-    ones.list
-    new.twos.list
-    new.threes.list
-    revised.scan.list
+    set.seed(20)
+
+    clusters.kmeans <- scaled.tibl %>% 
+      dplyr::select(positionX, crabSpiders) %>% 
+      kmeans(centers = 3, iter.max = 500, nstart = 3)
+
+
+    # get the cluster vector
+    original.cluster.list <- clusters.kmeans$cluster
+
+    # create lists capturing the original positions of 1, 2, and 3
+    ones.list <- replace(original.cluster.list, original.cluster.list != 1, 0)
+    twos.list <- replace(original.cluster.list, original.cluster.list != 2, 0)
+    threes.list <- replace(original.cluster.list, original.cluster.list != 3, 0)
+    # ones.list + twos.list + threes.list = original.scan.list
+    orig.ones.list <- ones.list
+    orig.twos.list <- twos.list
+    orig.threes.list <- threes.list
+
+    # are there at least 2 matches of '3' in position 1-2-3 ?
+    if (sum(orig.threes.list[1:3]) > 3) {
+      # there are multiple 3s in the first 3 positions, swap 3s to all 1s
+      ones.list <- replace(orig.threes.list, orig.threes.list==3, 1)
+      twos.list <- replace(orig.twos.list, orig.twos.list==2, 2)
+      threes.list <- replace(orig.ones.list, orig.ones.list==1, 3)
+    # are there at least 2 matches of '2' in position 1-2-3 ?  
+    } else if (sum(orig.twos.list[1:3] == 2) > 2) {
+      # there are multiple 2s in the first 3 positions, change all 2s to 1s
+      ones.list <- replace(orig.twos.list, orig.twos.list==2, 1)
+      twos.list <- replace(orig.ones.list, orig.ones.list==1, 2)
+      threes.list <- replace(orig.threes.list, orig.threes.list==3, 3)
+    } 
+
+    revised.scan.list <- ones.list + twos.list + threes.list
+    revised.ones.list <- ones.list
+    revised.twos.list <- twos.list
+    revised.threes.list <- threes.list
+
+    if (debug==TRUE) {
+      print("original")
+      print(orig.ones.list)
+      print(orig.twos.list)
+      print(orig.threes.list)
+      print(original.cluster.list)
+
+      print("before 8:10")
+      print(" ")
+      print(revised.ones.list)
+      print(revised.twos.list)
+      print(revised.threes.list)
+      print(revised.scan.list)
+    }
+
+  
+    # are there at least 2 matches of '2' in position 8-9-10 ?
+    if (sum(revised.twos.list[8:10]) > 2) {
+      # there are multiple 2s in the last 3 positions, swap 2s to all 3s
+      twos.list <- replace(revised.threes.list, revised.threes.list==3, 2)
+      threes.list <- replace(revised.twos.list, revised.twos.list==2, 3)
+      ones.list <- replace(revised.ones.list, revised.ones.list==1, 1)
+    # are there at least 2 matches of '1' in position 8-9-10 ?  
+    } else if (sum(revised.ones.list[8:10]) > 1) {
+      # there are multiple 1s in the last 3 positions, change all 1s to 3s
+      threes.list <- replace(revised.ones.list, revised.ones.list==1, 3)
+      twos.list <- replace(revised.twos.list, revised.twos.list==2, 2)
+      ones.list <- replace(revised.threes.list, revised.threes.list==3, 1)
+    } 
+
+    revised.scan.list <- ones.list + twos.list + threes.list
+    revised.ones.list <- ones.list
+    revised.twos.list <- twos.list
+    revised.threes.list <- threes.list
+  
+    if (debug==TRUE) {
+      print("after 8:10")
+      print(" ")
+      print(ones.list)
+      print(twos.list)
+      print(threes.list)
+      print(revised.scan.list)
+    }
+  
+    # two final rules
+    # position 1 should always be assigned to cluster 1
+    # position 10 should always be assigned to cluster 3
+    # handling only the situation where a 2 exists in either position
+    # (not both)
+  
+    # is there a '2' in position 1 ?
+    if (revised.scan.list[1] == 2) {
+      # change all 2s to 1s and 1s to 2s
+      ones.list <- replace(revised.twos.list, revised.twos.list==2, 1)
+      twos.list <- replace(revised.ones.list, revised.ones.list==1, 2) 
+      threes.list <- revised.threes.list
+    } 
+    # is there a '2' in position 10 ? 
+    if (revised.scan.list[10] == 2) {
+     # change all 2s to 3s and 3s to 2s
+      threes.list <- replace(revised.twos.list, revised.twos.list==2, 3)
+      twos.list <- replace(revised.threes.list, revised.threes.list==3, 2) 
+      ones.list <- revised.ones.list
+    } 
+
+    revised.scan.list <- ones.list + twos.list + threes.list
+    
   }
-
-  # are there at least 2 matches of '2' in position 8-9-10 ?
-  if (sum(revised.scan.list[8:10] == 2) > 1) {
-    # there are multiple 2s in the last 3 positions, change all 2s to 3s
-    final.threes.list <- replace(new.twos.list, new.twos.list==2, 3)
-    final.twos.list <- replace(new.threes.list, new.threes.list==3, 2)  
-  } 
-
-  revised.scan.list <- ones.list + final.twos.list + final.threes.list
-  
-
-  if (FALSE) {
-    original.cluster.list
-    ones.list
-    final.twos.list
-    final.threes.list
-    revised.scan.list <- ones.list + final.twos.list + final.threes.list
-    revised.scan.list
+  else {
+    # enoughData() returned FALSE, not enough data to build clusters
+    # set the revised scan list to zeros (no clusters assigned)
+    original.cluster.list <- c(0,0,0,0,0,0,0,0,0,0)
+    revised.scan.list <- c(0,0,0,0,0,0,0,0,0,0)
   }
   
-  # two final rules
-  # position 1 should always be assigned to cluster 1
-  # position 10 should always be assigned to cluster 3
-  # handling only the situation where a 2 exists in either position
-  # (not both)
-  
-  ones.list <- replace(revised.scan.list, revised.scan.list != 1, 0)
-  twos.list <- replace(revised.scan.list, revised.scan.list != 2, 0)
-  threes.list <- replace(revised.scan.list, revised.scan.list != 3, 0)
-  
-  modified.ones.list <- ones.list
-  modified.twos.list <- twos.list
-  modified.threes.list <- threes.list
-  
-  if (revised.scan.list[1] == 2) {
-    # change all 2s to 1s and 1s to 2s
-    modified.ones.list <- replace(twos.list, twos.list==2, 1)
-    modified.twos.list <- replace(ones.list, ones.list==1, 2) 
-    modified.threes.list <- threes.list
-  } 
-  if (revised.scan.list[10] == 2) {
-    # change all 2s to 3s and 3s to 2s
-    modified.threes.list <- replace(twos.list, twos.list==2, 3)
-    modified.twos.list <- replace(threes.list, threes.list==3, 2) 
-    modified.ones.list <- ones.list
-  } 
-
-  revised.scan.list <- modified.ones.list + modified.twos.list + modified.threes.list
-
   if (debug==TRUE) {
-
-    printString <- paste("original clusters : ", 
+      print(paste("week : ", week, sep=''))
+      printString <- paste("original clusters : ",
                          do.call("paste",
                                 as.list(original.cluster.list)), sep='')
-    print(printString)
-
-    printString <- paste("revised clusters : ", 
+      print(printString)
+      printString <- paste("revised clusters : ", 
                          do.call("paste", 
                                  as.list(revised.scan.list)), sep='')
-    print(printString)
-  
-  }
+      print(printString)
+    }
   
 
   # return the cluster assignments as a single column tibble
