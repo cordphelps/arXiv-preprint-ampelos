@@ -15,7 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 
 
-```{r cluster-intro}
+```{r intro}
 
 library(ggplot2)
 library(gridExtra)
@@ -38,7 +38,147 @@ bugs.tibl <- bugs.tibl %>%
 
 ```
 
-```{r}
+```{r make-dist}
+
+	# 11 *unique* weeks are expected to satisfy the design of kmPlotNew()
+	weeks.list <- getWeeks(bugs.tibl)
+
+	whichData <- bugs.tibl
+	# two transects : 'control' and 'oakMargin' (= semi-natural habitat / SNH)
+	whichTransect <- 'oakMargin'
+	# two trap collection time periods : 'am' and 'pm'
+	whichTime <- 'pm'
+
+  SNH.tibl <- whichData %>%
+    dplyr::filter(transect==whichTransect)  %>%
+    dplyr::filter(time==whichTime) %>%
+    dplyr::select(-transect, -position, -date, -time, -julian) %>%
+    dplyr::rename(crabSpiders = Thomisidae..crab.spider.)
+
+  whichTransect <- 'control'
+  
+  control.tibl <- whichData %>%
+    dplyr::filter(transect==whichTransect)  %>%
+    dplyr::filter(time==whichTime) %>%
+    dplyr::select(-transect, -position, -date, -time, -julian) %>%
+    dplyr::rename(crabSpiders = Thomisidae..crab.spider.) 
+  
+  ggList <- makeDistributionGraphics(tibbleSNH=SNH.tibl, 
+                                     tibbleControl=control.tibl,
+                                     time=whichTime)
+  
+```
+
+```{r dist-graphics}
+
+makeDistributionGraphics <- function(tibbleSNH, tibbleControl, time) {
+  
+  # ecdf() ?   empirical cumulative distribution function
+  # https://bjlkeng.github.io/posts/the-empirical-distribution-function/
+  
+  # https://rpubs.com/mpfoley73/456645
+  # the PDF (probability *density*) and CDF (cumulative distribution) combo graph is
+  # extremely confusing. x axes are different (continuous and discrete) and
+  # y axes are different (probability per unit and probability)
+  # don't overlay them
+  
+library(ggplot2)
+library(dplyr)
+options(scipen = 999, digits = 2) # sig digits
+
+
+eventsSNH <- 0:max(tibbleSNH$crabSpiders)
+eventsControl <- 0:max(tibbleControl$crabSpiders)
+
+
+#  Poisson Distribution
+densitySNH <- dpois(x = eventsSNH, lambda = mean(tibbleSNH$crabSpiders))
+probSNH <- ppois(q = eventsSNH, lambda = mean(tibbleSNH$crabSpiders), lower.tail = TRUE)
+# lambda is a 'rate', the mean number of spiders captured in a time interval
+# note : Examples that violate the Poisson assumptions
+# https://en.wikipedia.org/wiki/Poisson_distribution
+densityControl <- dpois(x = eventsControl, lambda = mean(tibbleControl$crabSpiders))
+probControl <- ppois(q = eventsControl, lambda = mean(tibbleControl$crabSpiders), lower.tail = TRUE)
+
+  # a probability mass function is a function that gives the probability that a 
+  # discrete random variable is exactly equal to some value.
+  # a PMF differs from a probability density function (PDF) in that the latter 
+  # is associated with continuous rather than discrete random variables. A PDF 
+  # must be integrated over an interval to yield a probability
+  # https://en.wikipedia.org/wiki/Probability_mass_function
+
+  tiblSNH <- tibble(events, densitySNH, probSNH)
+  tiblControl <- tibble(events, densityControl, probControl) 
+  
+  captionText <- paste("sampling time: ", time, sep="")
+
+  ggPMF <- ggplot() +
+  
+    geom_col(data=tiblSNH, aes(x = factor(eventsSNH), y = densitySNH), 
+             just = 0, width =.2, fill='green', color='black') +
+
+    #geom_text(data=tiblSNH, aes(x = factor(eventsSNH), y = densitySNH + 0.01, 
+                #                label = round(densitySNH, 2)), 
+           # size = 3, vjust = 0, nudge_x = -.2 ) +
+    
+    geom_col(data=tiblControl, aes(x = factor(eventsControl), y = densityControl), 
+             just = 1, width =.2, fill='red', color='black') +
+
+    #geom_text(data=tiblControl, aes(x = factor(eventsControl), y = densityControl + 0.01, 
+                            #    label = round(densityControl, 2)), 
+           # size = 3, vjust = 0, nudge_x = .2 ) +
+    
+    expand_limits(y = c(0,1)) +
+
+    labs(title = "poisson probability mass function", 
+         subtitle = "SNH transect (green), control transect (red)",
+         caption = captionText,    
+         x = "crab spider counts", y = "probability mass") +
+          
+    theme_bw()
+
+  ggCDF <- ggplot() +
+  
+    geom_point(data = tiblSNH, aes(x = factor(eventsSNH), y = probSNH), 
+             fill = 'green', shape = 21, size=5) +
+    
+    geom_segment(data = tiblSNH, aes(x = as.numeric(eventsSNH) + 1, y = probSNH,
+                    xend = as.numeric(eventsSNH) + 1.5, yend = probSNH), color = 'black') + 
+    
+    geom_point(data = tiblControl, aes(x = factor(eventsControl), y = probControl), 
+             fill = 'red', shape = 21, size=5) +
+    
+    geom_segment(data = tiblControl, aes(x = as.numeric(eventsControl) + 1, y = probControl,
+                    xend = as.numeric(eventsControl) + 1.5, yend = probControl), color = 'black') +
+    
+    expand_limits(y = c(.5,1)) +
+
+    labs(title = "poisson cumulative distribution function", 
+          subtitle = "SNH transect (green), control transect (red)",
+          caption = captionText,
+          x = "crab spider counts", y = "cumulative probability") +
+  
+    theme_bw()
+
+  returnList <- list()
+  returnList[[1]] <- ggPMF
+  returnList[[2]] <- ggCDF
+  
+  hostDir <- '/Users/rcphelps/code/thesis/journalArticle/arXiv-preprint'
+	where <- paste(hostDir, "/images", sep="")
+	filenamePMF <- paste("dist-PMF-", "both", "-", time, "-.png", sep="")
+	filenameCDF <- paste("dist-CDF-", "both", "-", time, "-.png", sep="")
+	
+	saveGraphics(graphics = ggPMF, name = filenamePMF, destinationPath = where) 
+	saveGraphics(graphics = ggCDF, name = filenameCDF, destinationPath = where) 
+  
+  return(returnList)
+}
+
+```
+
+
+```{r make-clusters}
 
 
 	
@@ -51,7 +191,7 @@ bugs.tibl <- bugs.tibl %>%
 	# two transects : 'control' and 'oakMargin' (= semi-natural habitat / SNH)
 	whichTransect <- 'oakMargin'
 	# two trap collection time periods : 'am' and 'pm'
-	whichTime <- 'xm'
+	whichTime <- 'pm'
 
 	clusters.list <- list()
 	clusters.tibl <- tibble::tibble('defaultColumn', .rows = 10)
@@ -60,7 +200,7 @@ bugs.tibl <- bugs.tibl %>%
 
 			  # currentWeek <- weeks.list[[i]]
         temp.tibl <- assignClusters(week=weeks.list[[i]], transect = whichTransect,
-                                 time=whichTime, tibble=whichData, debug=TRUE)
+                                 time=whichTime, tibble=whichData, debug=FALSE)
 
         clusters.tibl <- dplyr::bind_cols(clusters.tibl, temp.tibl)
                                           
@@ -76,9 +216,53 @@ bugs.tibl <- bugs.tibl %>%
 	
 
   
-	kmPlotNew(tibble = clusters.tibl, transectText = whichTransect, timeText = whichTime)
+	gg <- kmPlotNew(tibble = clusters.tibl, transectText = whichTransect, timeText = whichTime)
+	
+	hostDir <- '/Users/rcphelps/code/thesis/journalArticle/arXiv-preprint'
+	where <- paste(hostDir, "/images", sep="")
+	filename <- paste("clusters-", whichTransect, "-", whichTime, "-.png", sep="")
+	
+	saveGraphics(graphics = gg, name = filename, destinationPath = where) 
+  
+	  
 	  
 ```
+
+
+```{r general}
+
+saveGraphics <- function(graphics, name, destinationPath) {
+  
+      # gg : ggplot output
+      # name : filename with extension ('pdf')
+      # dirPath : path to host directory relative to working directory
+  
+  
+      # setwd("/Users/rcphelps/code/avo-soil-leaf-data/")
+      # fileName <- paste("NK", "-monthly.pdf", sep="")
+      # dirPath <- paste(wd, "/output", sep="")
+  
+      fullPath <- paste(destinationPath, "/", name, sep="")
+
+      if (file.exists(fullPath)) { file.remove(fullPath) }
+
+        # device not necessary if extension provided
+      suppressMessages(ggsave(name, plot = graphics, device = NULL, 
+                              path = destinationPath,
+                              scale = 1, width = 3.8, height = 4, 
+                              dpi = 300, limitsize = TRUE, units = "in") )
+      
+      if (file.exists(fullPath)) { 
+        return(paste( "saved ", fullPath, sep=" "))
+      }
+      else {
+        return(paste( "unable to save ", fullPath, sep=" "))
+      }
+      
+}
+
+```
+
 
 
 ```{r}
@@ -98,7 +282,7 @@ kmPlotNew <- function(tibble, transectText, timeText) {
   #
   # weeks : a list, chr[1:10] "week23" "week24" ... "week34"
   # transectText :  text for informational subtitle content
-  # time : text for informational subtitle content indicating 'am' or 'pm'
+  # timeText : text for informational subtitle content indicating 'am' or 'pm'
   
   if (transectText == 'oakMargin') {
     # adjust for source data ambiguity
@@ -116,42 +300,42 @@ kmPlotNew <- function(tibble, transectText, timeText) {
   
   clusterColors = c("3" = "blue", "2" = "green", "1" = "red", "0" = '#FFFFFF')
 
-	ggplot(data = tibble) + 
+	gg <- ggplot(data = tibble) + 
 
-  	geom_point(aes(y = position, x = weeks[[1]], fill = week23),  
+  	      geom_point(aes(y = position, x = weeks[[1]], fill = week23),  
   		         shape = 21, size=5) +
 	  
-	  geom_point(aes(y = position, x = weeks[[2]], fill = week24),  
+	        geom_point(aes(y = position, x = weeks[[2]], fill = week24),  
   		         shape = 21, size=5) +
 	  
-	  geom_point(aes(y = position, x = weeks[[3]], fill = week25),  
+	        geom_point(aes(y = position, x = weeks[[3]], fill = week25),  
   		         shape = 21, size=5) +
 	  
-	  geom_point(aes(y = position, x = weeks[[4]], fill = week26),  
+	        geom_point(aes(y = position, x = weeks[[4]], fill = week26),  
   		         shape = 21, size=5) +
 	  
-	  geom_point(aes(y = position, x = weeks[[5]], fill = week27),  
+	        geom_point(aes(y = position, x = weeks[[5]], fill = week27),  
   		         shape = 21, size=5) +
 	  
-	  geom_point(aes(y = position, x = weeks[[6]], fill = week28),  
+	        geom_point(aes(y = position, x = weeks[[6]], fill = week28),  
   		         shape = 21, size=5) +
 	  
-  	geom_point(aes(y = position, x = weeks[[7]], fill = week29),  
+  	      geom_point(aes(y = position, x = weeks[[7]], fill = week29),  
   		         shape = 21, size=5) +
 	  
-	  geom_point(aes(y = position, x = weeks[[8]], fill = week30),  
+	        geom_point(aes(y = position, x = weeks[[8]], fill = week30),  
   		         shape = 21, size=5) +
 	  
-	  geom_point(aes(y = position, x = weeks[[9]], fill = week31),  
+	        geom_point(aes(y = position, x = weeks[[9]], fill = week31),  
   		         shape = 21, size=5) +
 	  
-	  geom_point(aes(y = position, x = weeks[[10]], fill = week32),  
+	        geom_point(aes(y = position, x = weeks[[10]], fill = week32),  
   		         shape = 21, size=5) +
 	  
-	  geom_point(aes(y = position, x = weeks[[11]], fill = week34),  
+	        geom_point(aes(y = position, x = weeks[[11]], fill = week34),  
   		         shape = 21, size=5) +
 
-	  scale_fill_manual(values = clusterColors, 
+	        scale_fill_manual(values = clusterColors, 
 	                    limits = names(clusterColors),
 	                    labels = c("cluster 3", "cluster 2", "cluster 1")) +
 	
@@ -188,11 +372,12 @@ kmPlotNew <- function(tibble, transectText, timeText) {
           legend.position="bottom",
           legend.title = element_blank()
           ) 
+	
+	return(gg)
 
 }
 
 ```
-
 
 
 ```{r cluster-functions}
