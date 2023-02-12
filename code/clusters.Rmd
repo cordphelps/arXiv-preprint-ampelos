@@ -38,6 +38,113 @@ bugs.tibl <- bugs.tibl %>%
 
 ```
 
+
+```{r mann-whitney-u-test}
+
+
+	# 11 *unique* weeks are expected to satisfy the design of kmPlotNew()
+	weeks.list <- getWeeks(bugs.tibl)
+
+  positions.group.1 <- c(1, 2, 3)
+  positions.group.2 <- c(4, 5, 6, 7)
+  positions.group.3 <- c(8, 9, 10)
+
+	whichData <- bugs.tibl
+	# two transects : 'control' and 'oakMargin' (= semi-natural habitat / SNH)
+	whichTransect <- 'oakMargin'
+	# two trap collection time periods : 'am' and 'pm'
+	whichTime <- 'pm'
+
+  SNH.group.1.tibl <- whichData %>%
+    dplyr::filter(transect==whichTransect)  %>%
+    dplyr::filter(time==whichTime) %>%
+    dplyr::select(-positionX, -date, -time, -julian) %>%
+    dplyr::rename(crabSpiders = Thomisidae..crab.spider.) %>%
+    dplyr::group_by(week, position) %>%
+    dplyr::summarize(crabSpiders=sum(crabSpiders), .groups='drop'  ) %>%
+    dplyr::filter(position %in% positions.group.1) %>%
+    dplyr::mutate(transect=whichTransect)
+
+
+  whichTransect <- 'control'
+  
+  control.group.1.tibl <- whichData %>%
+    dplyr::filter(transect==whichTransect)  %>%
+    dplyr::filter(time==whichTime) %>%
+    dplyr::select(-transect, -positionX, -date, -time, -julian) %>%
+    dplyr::rename(crabSpiders = Thomisidae..crab.spider.) %>%
+    dplyr::group_by(week, position) %>%
+    dplyr::summarize(crabSpiders=sum(crabSpiders), .groups='drop'  ) %>%
+    dplyr::filter(position %in% positions.group.1) %>%
+    dplyr::mutate(transect=whichTransect)
+  
+  #
+  #
+  #
+  # attempting to mirror https://stat-methods.com/home/mann-whitney-u-r/
+  # append one tibble to the other
+  
+library("gmodels")
+library("car")
+library("DescTools")
+library("ggplot2")
+library("qqplotr")
+library("dplyr")
+  
+  merged.tibl <- dplyr::bind_rows(control.group.1.tibl, SNH.group.1.tibl) %>%
+    dplyr::rename(bugs = crabSpiders) %>%
+    dplyr::rename(spray = transect)
+  
+  merged.tibl %>% 
+    select(spray, bugs) %>% 
+    group_by(spray) %>% 
+    summarise(n = n(), 
+            mean = mean(bugs, na.rm = TRUE), 
+            sd = sd(bugs, na.rm = TRUE),
+            stderr = sd/sqrt(n),
+            LCL = mean - qt(1 - (0.05 / 2), n - 1) * stderr,
+            UCL = mean + qt(1 - (0.05 / 2), n - 1) * stderr,
+            median = median(bugs, na.rm = TRUE),
+            min = min(bugs, na.rm = TRUE), 
+            max = max(bugs, na.rm = TRUE),
+            IQR = IQR(bugs, na.rm = TRUE),
+            LCLmed = MedianCI(bugs, na.rm=TRUE)[2],
+            UCLmed = MedianCI(bugs, na.rm=TRUE)[3])
+  
+  dat <- merged.tibl
+  
+  ggplot(dat, aes(x = spray, y = bugs, fill = spray)) +
+  stat_boxplot(geom ="errorbar", width = 0.5) +
+  geom_boxplot(fill = "light blue") + 
+  stat_summary(fun.y=mean, geom="point", shape=10, size=3.5, color="black") + 
+  ggtitle("Boxplot of Treatments C and D") + 
+  theme_bw() + theme(legend.position="none")
+  
+  #Test each group for normality
+dat %>%
+  group_by(spray) %>%
+  summarise(`W Stat` = shapiro.test(bugs)$statistic,
+            p.value = shapiro.test(bugs)$p.value)
+
+#Perform QQ plots by group
+ggplot(data = dat, mapping = aes(sample = bugs, color = spray, fill = spray)) +
+  stat_qq_band(alpha=0.5, conf=0.95, qtype=1, bandType = "boot") +
+  stat_qq_line(identity=TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~ spray, scales = "free") +
+  labs(x = "Theoretical Quantiles", y = "Sample Quantiles") + theme_bw()
+
+#Perform the Mann-Whitney U test
+m1<-wilcox.test(bugs ~ spray, data=dat, na.rm=TRUE, paired=FALSE, exact=FALSE, conf.int=TRUE)
+print(m1)
+ 
+#Hodges Lehmann Estimator
+m1$estimate
+
+
+```
+
+
 ```{r make-dist}
 
 	# 11 *unique* weeks are expected to satisfy the design of kmPlotNew()
@@ -54,6 +161,7 @@ bugs.tibl <- bugs.tibl %>%
     dplyr::filter(time==whichTime) %>%
     dplyr::select(-transect, -position, -date, -time, -julian) %>%
     dplyr::rename(crabSpiders = Thomisidae..crab.spider.)
+  # what remains is // row / positionX / crabSpiders / week //
 
   whichTransect <- 'control'
   
