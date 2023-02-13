@@ -38,23 +38,29 @@ bugs.tibl <- bugs.tibl %>%
 
 ```
 
+```{r chi-sq}
 
-```{r mann-whitney-u-test}
+# The KS-Test and other tests such as Anderson Darling are used for continuous
+# distributions. For discrete distributions, you can use the Chi-Square goodness 
+# of fit test, which is based on comparing the #observed events vs. the number 
+# of expected based on the expected number for your distribution.
+# https://stats.stackexchange.com/questions/55148/goodness-of-fit-to-poisson-distribution
 
 
-	# 11 *unique* weeks are expected to satisfy the design of kmPlotNew()
-	weeks.list <- getWeeks(bugs.tibl)
+# good graphical explanation of test statistics at the bottom
+# https://www.jmp.com/en_sg/statistics-knowledge-portal/chi-square-test/chi-square-goodness-of-fit-test.html#:~:text=What%20is%20the%20Chi%2Dsquare,representative%20of%20the%20full%20population.
+# 
+
 
   positions.group.1 <- c(1, 2, 3)
   positions.group.2 <- c(4, 5, 6, 7)
   positions.group.3 <- c(8, 9, 10)
 
 	whichData <- bugs.tibl
-	# two transects : 'control' and 'oakMargin' (= semi-natural habitat / SNH)
-	whichTransect <- 'oakMargin'
 	# two trap collection time periods : 'am' and 'pm'
 	whichTime <- 'pm'
-
+	# two transects : 'control' and 'oakMargin' (= semi-natural habitat / SNH)
+	whichTransect <- 'oakMargin'
   SNH.group.1.tibl <- whichData %>%
     dplyr::filter(transect==whichTransect)  %>%
     dplyr::filter(time==whichTime) %>%
@@ -67,7 +73,6 @@ bugs.tibl <- bugs.tibl %>%
 
 
   whichTransect <- 'control'
-  
   control.group.1.tibl <- whichData %>%
     dplyr::filter(transect==whichTransect)  %>%
     dplyr::filter(time==whichTime) %>%
@@ -78,69 +83,181 @@ bugs.tibl <- bugs.tibl %>%
     dplyr::filter(position %in% positions.group.1) %>%
     dplyr::mutate(transect=whichTransect)
   
+  
+  control.vector <- control.group.1.tibl %>% pull(crabSpiders)
+  snh.vector <- SNH.group.1.tibl  %>% pull(crabSpiders)
+  
+  
+  stats <- chisq.test(x=control.vector, y=snh.vector)
+  # http://ianmadd.github.io/pages/Confidence_Intervals_Part4.html
+  # probability based on a quantile
+  probabilityDensity <- pchisq(stats$statistic, df = stats$parameter)
+  
+  # quantile based on a probability.
+  density95pct <- qchisq(.95, df=stats$parameter)
+  
+  # ref : https://www.jmp.com/en_sg/statistics-knowledge-portal/chi-square-test/chi-square-goodness-of-fit-test.html
+  
+  
+  # https://stackoverflow.com/questions/48908296/chi-square-density-graph-in-r
+  ggplot(data.frame(x = c(0, 20)), aes(x = x)) +
+     stat_function(fun = dchisq, args = list(df = degreesFreedom)) +
+    geom_vline(xintercept = density95pct) +
+    geom_vline(xintercept = stats$statistic) +
+    expand_limits(x = c(0,150)) 
+  
+  
+  chisq.1.tbl <- as_tibble(countsControl=control.group.1.tibl$crabSpiders, countsSNH=SNH.group.1.tibl)
+
+```
+
+
+```{r mann-whitney-u-test}
+
+
+	# 11 *unique* weeks are expected to satisfy the design of kmPlotNew()
+	weeks.list <- getWeeks(bugs.tibl)
+
+  positions.group.1 <- c(1, 2, 3)
+  positions.group.2 <- c(4, 5, 6, 7)
+  positions.group.3 <- c(8, 9, 10)
+
+	whichData <- bugs.tibl
+	# two trap collection time periods : 'am' and 'pm'
+	whichTime <- 'pm'
+	# two transects : 'control' and 'oakMargin' (= semi-natural habitat / SNH)
+	whichTransect <- 'oakMargin'
+  SNH.group.1.tibl <- whichData %>%
+    dplyr::filter(transect==whichTransect)  %>%
+    dplyr::filter(time==whichTime) %>%
+    dplyr::select(-positionX, -date, -time, -julian) %>%
+    dplyr::rename(crabSpiders = Thomisidae..crab.spider.) %>%
+    dplyr::group_by(week, position) %>%
+    dplyr::summarize(crabSpiders=sum(crabSpiders), .groups='drop'  ) %>%
+    dplyr::filter(position %in% positions.group.1) %>%
+    dplyr::mutate(transect=whichTransect)
+
+
+  whichTransect <- 'control'
+  control.group.1.tibl <- whichData %>%
+    dplyr::filter(transect==whichTransect)  %>%
+    dplyr::filter(time==whichTime) %>%
+    dplyr::select(-transect, -positionX, -date, -time, -julian) %>%
+    dplyr::rename(crabSpiders = Thomisidae..crab.spider.) %>%
+    dplyr::group_by(week, position) %>%
+    dplyr::summarize(crabSpiders=sum(crabSpiders), .groups='drop'  ) %>%
+    dplyr::filter(position %in% positions.group.1) %>%
+    dplyr::mutate(transect=whichTransect)
+  
+  make-MWU-graphics(control= control.group.1.tibl, treatment=SNH.group.1.tibl)
+  
   #
   #
-  #
-  # attempting to mirror https://stat-methods.com/home/mann-whitney-u-r/
+```
+  
+  
+``` {r graphics-mann-whitney}
+  
+make-MWU-graphics <- function(control, treatment) {
+
+  # mirror https://stat-methods.com/home/mann-whitney-u-r/
+
   # append one tibble to the other
+  merged.tibl <- dplyr::bind_rows(control, treatment) 
+  # the tibble columns are
+  #  // week : position : crabSpiders : transect //
+  #
+
   
-library("gmodels")
-library("car")
-library("DescTools")
-library("ggplot2")
-library("qqplotr")
-library("dplyr")
-  
-  merged.tibl <- dplyr::bind_rows(control.group.1.tibl, SNH.group.1.tibl) %>%
-    dplyr::rename(bugs = crabSpiders) %>%
-    dplyr::rename(spray = transect)
-  
-  merged.tibl %>% 
-    select(spray, bugs) %>% 
-    group_by(spray) %>% 
-    summarise(n = n(), 
-            mean = mean(bugs, na.rm = TRUE), 
-            sd = sd(bugs, na.rm = TRUE),
+  if (FALSE) {
+    library("gmodels")
+    library("car")
+    library("DescTools")
+    merged.tibl %>% 
+      select(transect, crabSpiders) %>% 
+      group_by(transect) %>% 
+      summarise(n = n(), 
+            mean = mean(crabSpiders, na.rm = TRUE), 
+            sd = sd(crabSpiders, na.rm = TRUE),
             stderr = sd/sqrt(n),
             LCL = mean - qt(1 - (0.05 / 2), n - 1) * stderr,
             UCL = mean + qt(1 - (0.05 / 2), n - 1) * stderr,
-            median = median(bugs, na.rm = TRUE),
-            min = min(bugs, na.rm = TRUE), 
-            max = max(bugs, na.rm = TRUE),
-            IQR = IQR(bugs, na.rm = TRUE),
-            LCLmed = MedianCI(bugs, na.rm=TRUE)[2],
-            UCLmed = MedianCI(bugs, na.rm=TRUE)[3])
+            median = median(crabSpiders, na.rm = TRUE),
+            min = min(crabSpiders, na.rm = TRUE), 
+            max = max(crabSpiders, na.rm = TRUE),
+            IQR = IQR(crabSpiders, na.rm = TRUE),
+            LCLmed = MedianCI(crabSpiders, na.rm=TRUE)[2],
+            UCLmed = MedianCI(crabSpiders, na.rm=TRUE)[3])
+  }
   
-  dat <- merged.tibl
   
-  ggplot(dat, aes(x = spray, y = bugs, fill = spray)) +
-  stat_boxplot(geom ="errorbar", width = 0.5) +
-  geom_boxplot(fill = "light blue") + 
-  stat_summary(fun.y=mean, geom="point", shape=10, size=3.5, color="black") + 
-  ggtitle("Boxplot of Treatments C and D") + 
-  theme_bw() + theme(legend.position="none")
-  
-  #Test each group for normality
-dat %>%
-  group_by(spray) %>%
-  summarise(`W Stat` = shapiro.test(bugs)$statistic,
-            p.value = shapiro.test(bugs)$p.value)
+  ggBox <- ggplot() +
+              stat_boxplot(geom ="errorbar", width = 0.5) +
+              geom_boxplot(control, mapping=aes(x = transect, y = crabSpiders, 
+                            fill = 'red')) + 
+              geom_boxplot(treatment, mapping=aes(x = transect, y = crabSpiders, 
+                            fill = 'green')) + 
+              stat_summary(fun.y=mean, geom="point", shape=10, size=3.5, color="black") + 
+              
+              expand_limits(y = c(.5,1)) +
 
-#Perform QQ plots by group
-ggplot(data = dat, mapping = aes(sample = bugs, color = spray, fill = spray)) +
-  stat_qq_band(alpha=0.5, conf=0.95, qtype=1, bandType = "boot") +
-  stat_qq_line(identity=TRUE) +
-  stat_qq_point(col="black") +
-  facet_wrap(~ spray, scales = "free") +
-  labs(x = "Theoretical Quantiles", y = "Sample Quantiles") + theme_bw()
+              labs(title = "poisson cumulative distribution function", 
+                    subtitle = "SNH transect (green), control transect (red)",
+                    caption = captionText,
+                    x = "transect", y = "crab spider counts") + 
+              theme_bw() + 
+              theme(legend.position="none")
+  
+  # Test each group for normality
+  # The Shapiro–Wilk test statistic (Calc W) is a measure of how well 
+  # the ordered and standardized sample quantiles fit the standard normal 
+  # quantiles. The statistic will take a value between 0 and 1 with 1 
+  # being a perfect match.
+  # Note that the result of the Shapiro–Wilk test should not be taken as 
+  # being 100% reliable (no hypothesis test should). There will be cases 
+  # where the test will give a misleading result. Therefore the Shapiro–Wilk 
+  # test should never be used on its own – it should always be interpreted 
+  # along with the results of graphical and numerical tools. In many cases, 
+  # it will be obvious from the graphical and numerical tools that the data 
+  # are (or are not) normally distributed, so the Shapiro–Wilk test will be 
+  # unnecessary. It can be useful, however, when the results of the graphical 
+  # and numerical tools are inconclusive.
+  # https://www.sciencedirect.com/topics/mathematics/wilk-test
+  
+  merged.tibl %>%
+    group_by(transect) %>%
+    summarise(`W Stat` = shapiro.test(crabSpiders)$statistic,
+              p.value = shapiro.test(crabSpiders)$p.value)
+  
 
-#Perform the Mann-Whitney U test
-m1<-wilcox.test(bugs ~ spray, data=dat, na.rm=TRUE, paired=FALSE, exact=FALSE, conf.int=TRUE)
-print(m1)
+  if (FALSE) {
+    #  QQ plots by group
+    library("qqplotr")
+    ggplot(data = merged.tibl, aes(sample = crabSpiders, color = transect, fill = transect)) +
+      stat_qq_band(alpha=0.5, conf=0.95, qtype=1, bandType = "boot") +
+      stat_qq_line(identity=TRUE) +
+      stat_qq_point(col="black") +
+      facet_wrap(~ transect, scales = "free") +
+      labs(x = "Theoretical Quantiles", y = "Sample Quantiles") + theme_bw()
+}
+
+  # Mann-Whitney U test
+  # ?wilcox.test Details : Otherwise, if both x and y are given and paired 
+  # is FALSE, a Wilcoxon rank sum test (equivalent to the Mann-Whitney test: 
+  # see the Note) is carried out.
+  # Optionally (if argument conf.int is true), a nonparametric confidence 
+  # interval and an estimator for the pseudomedian (one-sample case) or 
+  # for the difference of the location parameters x-y is computed.
+  m1 <- wilcox.test(crabSpiders ~ transect, data=merged.tibl, na.rm=TRUE, 
+                    paired=FALSE, exact=FALSE, conf.int=TRUE)
+  print(m1)
  
-#Hodges Lehmann Estimator
-m1$estimate
+  # Hodges Lehmann Estimator
+  # 'The Hodges–Lehmann statistic also estimates the difference between two populations.' per
+  # https://en.wikipedia.org/wiki/Hodges%E2%80%93Lehmann_estimator
+  m1$estimate
 
+}
 
 ```
 
