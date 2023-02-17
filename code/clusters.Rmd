@@ -19,6 +19,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 library(ggplot2)
 library(gridExtra)
+library(geomtextpath)
 
 library(dplyr)
 
@@ -38,7 +39,25 @@ bugs.tibl <- bugs.tibl %>%
 
 ```
 
+```{r chisq-distribution}
+
+  positions.group.1 <- c(1, 2, 3)
+  positions.group.2 <- c(4, 5, 6, 7)
+  positions.group.3 <- c(8, 9, 10)
+
+  chisq.p1.gg <- chsqStatistics(data=bugs.tibl, pos=positions.group.1, time="pm")
+  chisq.p2.gg <- chsqStatistics(data=bugs.tibl, pos=positions.group.2, time="pm")
+  chisq.p3.gg <- chsqStatistics(data=bugs.tibl, pos=positions.group.3, time="pm")
+  
+  
+
+```
+
+
+
 ```{r chi-sq}
+
+chsqStatistics <- function(data, pos, time) {
 
 # The KS-Test and other tests such as Anderson Darling are used for continuous
 # distributions. For discrete distributions, you can use the Chi-Square goodness 
@@ -52,62 +71,172 @@ bugs.tibl <- bugs.tibl %>%
 # 
 
 
-  positions.group.1 <- c(1, 2, 3)
-  positions.group.2 <- c(4, 5, 6, 7)
-  positions.group.3 <- c(8, 9, 10)
-
-	whichData <- bugs.tibl
+  whichData <- data
+	#whichData <- bugs.tibl
 	# two trap collection time periods : 'am' and 'pm'
-	whichTime <- 'pm'
+  whichTime <- time
+	#whichTime <- 'pm'
 	# two transects : 'control' and 'oakMargin' (= semi-natural habitat / SNH)
 	whichTransect <- 'oakMargin'
-  SNH.group.1.tibl <- whichData %>%
+  SNH.group.1.new.tibl <- whichData %>%
     dplyr::filter(transect==whichTransect)  %>%
     dplyr::filter(time==whichTime) %>%
+    dplyr::filter(position %in% {{pos}}) %>%
     dplyr::select(-positionX, -date, -time, -julian) %>%
     dplyr::rename(crabSpiders = Thomisidae..crab.spider.) %>%
-    dplyr::group_by(week, position) %>%
+    dplyr::group_by(week) %>%
     dplyr::summarize(crabSpiders=sum(crabSpiders), .groups='drop'  ) %>%
-    dplyr::filter(position %in% positions.group.1) %>%
-    dplyr::mutate(transect=whichTransect)
 
+    dplyr::mutate(transect=whichTransect)
+  
+  #
+  # result :  //  week  / crabSpiders / transect  //
+  #
 
   whichTransect <- 'control'
-  control.group.1.tibl <- whichData %>%
+  control.group.1.new.tibl <- whichData %>%
     dplyr::filter(transect==whichTransect)  %>%
     dplyr::filter(time==whichTime) %>%
+    dplyr::filter(position %in% positions.group.1) %>%
     dplyr::select(-transect, -positionX, -date, -time, -julian) %>%
     dplyr::rename(crabSpiders = Thomisidae..crab.spider.) %>%
-    dplyr::group_by(week, position) %>%
+    dplyr::group_by(week) %>%
     dplyr::summarize(crabSpiders=sum(crabSpiders), .groups='drop'  ) %>%
-    dplyr::filter(position %in% positions.group.1) %>%
+
     dplyr::mutate(transect=whichTransect)
   
+  control.vector <- control.group.1.new.tibl %>% pull(crabSpiders)
+  snh.vector <- SNH.group.1.new.tibl  %>% pull(crabSpiders)
   
-  control.vector <- control.group.1.tibl %>% pull(crabSpiders)
-  snh.vector <- SNH.group.1.tibl  %>% pull(crabSpiders)
+  #
+  # result : // (a vector of spider counts)
+  #
   
+  stats.p1 <- chisq.test(x=control.vector, y=snh.vector)
   
-  stats <- chisq.test(x=control.vector, y=snh.vector)
   # http://ianmadd.github.io/pages/Confidence_Intervals_Part4.html
   # probability based on a quantile
-  probabilityDensity <- pchisq(stats$statistic, df = stats$parameter)
-  
-  # quantile based on a probability.
-  density95pct <- qchisq(.95, df=stats$parameter)
-  
+  probabilityDensity.p1 <- pchisq(stats.p1$statistic, df = stats.p1$parameter)
+  #      .9368 = pchisq(48.58, df = 35)
+  degreesFreedom.p1 <- stats.p1$parameter
+  # quantile based on a probability. (value of the x axis)
+  chi95pct.p1 <- qchisq(.95, df=stats.p1$parameter)
+  #      49.80 = qchisq(.95, df = 35)
+  #
   # ref : https://www.jmp.com/en_sg/statistics-knowledge-portal/chi-square-test/chi-square-goodness-of-fit-test.html
   
+  # Using the Poisson distribution with μ=0.75 we can compute p(i), the 
+  # hypothesised probabilities associated with each class (='bin'). From these 
+  # we can calculate the expected frequencies (under the null hypothesis):
+  # 
   
-  # https://stackoverflow.com/questions/48908296/chi-square-density-graph-in-r
-  ggplot(data.frame(x = c(0, 20)), aes(x = x)) +
-     stat_function(fun = dchisq, args = list(df = degreesFreedom)) +
-    geom_vline(xintercept = density95pct) +
-    geom_vline(xintercept = stats$statistic) +
-    expand_limits(x = c(0,150)) 
+
+      # https://stackoverflow.com/questions/48908296/chi-square-density-graph-in-r
+  gg <- ggplot() +
+    
+      stat_function(fun = dchisq, args = list(df = degreesFreedom.p1)) +
+      # https://stackoverflow.com/questions/48753007/using-stat-function-to-draw-partially-shaded-normal-curve-in-ggplot2                 
+      stat_function(fun = dchisq, args = list(df = degreesFreedom.p1),
+                   xlim = c(0, chi95pct.p1),
+                  geom = "area", fill = "green", alpha = .4) +
+    
+    #geom_vline(xintercept = chi95pct) +
+    geom_vline(xintercept = stats.p1$statistic) +
+    expand_limits(x = c(0,75)) +
+    geom_textvline(xintercept = chi95pct.p1, label = "probability density: 95%", 
+                   hjust = 0.5, linetype = 2, color = "blue4") 
   
   
-  chisq.1.tbl <- as_tibble(countsControl=control.group.1.tibl$crabSpiders, countsSNH=SNH.group.1.tibl)
+  
+  if (FALSE) {
+  ##########################################################################
+  ##########################################################################
+  ############## begin chsq experimentation 
+  ##########################################################################
+  ##########################################################################
+  
+  
+  # build : 
+  # //   bin  /  frequency-observed  / hypo-prob  / expected-count / freq-expected  //
+
+  meanControl <- mean(control.group.1.new.tibl$crabSpiders)
+  meanSNH <- mean(SNH.group.1.new.tibl$crabSpiders)
+  maxControl <- max(control.group.1.new.tibl$crabSpiders)
+  maxSNH <- max(SNH.group.1.new.tibl$crabSpiders)
+  
+  # For a test of independence, df = (Rows − 1)×(Cols − 1), where in this case, 
+  # Rows corresponds to the number of categories in one variable, and Cols
+  # correspond to the number of categories in the second variable.[2]
+  # https://en.wikipedia.org/wiki/Pearson%27s_chi-squared_test
+  uniqueBinsControl.count <- dplyr::n_distinct(control.group.1.new.tibl$crabSpiders)
+  uniqueBinsControl.list <- unique(control.group.1.new.tibl$crabSpiders)
+  uniqueBinsSNH.count <- dplyr::n_distinct(SNH.group.1.new.tibl$crabSpiders)
+  uniqueBinsSNH.list <- unique(SNH.group.1.new.tibl$crabSpiders)
+  
+  degreesFreedom <- (uniqueBinsControl.count -1 ) * (uniqueBinsSNH.count - 1)
+  mu <- mean(SNH.group.1.new.tibl$crabSpiders)
+  samples <- nrow(SNH.group.1.new.tibl)
+  
+  muPoissonSNH.tbl <- tribble(~bin, ~actualCount)
+  for (i in 1:length(uniqueBinsSNH.list)) {
+    # remove outliers
+    if (uniqueBinsSNH.list[[i]] < 10) {
+      binClass <- uniqueBinsSNH.list[[i]]
+      frequency <- sum(snh.vector==uniqueBinsSNH.list[[i]], na.rm = TRUE)
+    
+      muPoissonSNH.tbl <- muPoissonSNH.tbl %>% 
+                            add_row(bin= binClass, actualCount= frequency)
+    }
+  }
+  # now mu for the sample can be calculated
+  mu <- muPoissonSNH.tbl %>% sum(muPoissonSNH.tbl$bin * muPoissonSNH.tbl$actualCount) / samples
+          
+  
+  chiSNH.tbl <- tribble(~bin, ~frequencyObserved, ~hypoProbability, 
+                        ~countExpected, ~frequencyExpectedNull)
+  chisq.X.SNH.lst <- list()
+  chisq.prob.SNH.lst <- list()
+  
+  for (i in 1:length(uniqueBinsSNH.list)) { 
+    
+    binClass <- uniqueBinsSNH.list[[i]]
+    fObs <- sum(snh.vector==uniqueBinsSNH.list[[i]], na.rm = TRUE)
+
+    hp <- (  exp(- mu) * (mu**(binClass)) ) / factorial(binClass)
+    fExp <- hp * (binClass)
+    countExp <- samples * hp
+    
+    chiSNH.tbl <- chiSNH.tbl %>% 
+                    add_row(bin= binClass,
+                            frequencyObserved = fObs,
+                            hypoProbability = hp,
+                            countExpected = countExp,
+                            frequencyExpectedNull = fExp
+                            )
+
+        if (FALSE) {
+          # calculate probability of each count  (='bin')
+          # https://bookdown.org/yg484/rec_4_note/chi-square-goodness-of-fit-test.html
+          samples <- 11
+          mu <- (meanControl + meanSNH) / 2
+          binClass <- 0
+          p0 <- (  exp(- mu) * (mu**binClass) ) / factorial(binClass)
+          binCLass <- 1
+          p1 <- (  exp(- mu) * (mu**binClass) ) / factorial(binClass)
+          # et cetera for each bin
+        }
+      
+  }
+  
+  ##########################################################################
+  ##########################################################################
+  ############## end chsq experimentation 
+  ##########################################################################
+  ##########################################################################
+  }
+
+  return(gg)
+}
 
 ```
 
@@ -121,10 +250,30 @@ bugs.tibl <- bugs.tibl %>%
   positions.group.1 <- c(1, 2, 3)
   positions.group.2 <- c(4, 5, 6, 7)
   positions.group.3 <- c(8, 9, 10)
+  
+  weeksCaption <- paste("weeks ", pos[[1]], " - ", last[[pos]], sep="")
 
-	whichData <- bugs.tibl
+  box.p1.gg <- MWUgraphics(data= bugs.tibl, pos=positions.group.1, time='pm')
+  box.p2.gg <- MWUgraphics(data= bugs.tibl, pos=positions.group.2, time='pm')
+  box.p3.gg <- MWUgraphics(data= bugs.tibl, pos=positions.group.3, time='pm')
+  
+  #
+  #
+```
+  
+  
+``` {r graphics-mann-whitney}
+  
+MWUgraphics <- function(data, pos, time) {
+
+  # mirror https://stat-methods.com/home/mann-whitney-u-r/
+  # MWUgraphics <- function(control, treatment) {
+  
+  positionsCaption <- paste("trap postions ", pos[[1]], " - ", last(pos), sep="")
+  
+	whichData <- data
 	# two trap collection time periods : 'am' and 'pm'
-	whichTime <- 'pm'
+	whichTime <- time
 	# two transects : 'control' and 'oakMargin' (= semi-natural habitat / SNH)
 	whichTransect <- 'oakMargin'
   SNH.group.1.tibl <- whichData %>%
@@ -134,9 +283,8 @@ bugs.tibl <- bugs.tibl %>%
     dplyr::rename(crabSpiders = Thomisidae..crab.spider.) %>%
     dplyr::group_by(week, position) %>%
     dplyr::summarize(crabSpiders=sum(crabSpiders), .groups='drop'  ) %>%
-    dplyr::filter(position %in% positions.group.1) %>%
+    dplyr::filter(position %in% {{pos}}) %>%
     dplyr::mutate(transect=whichTransect)
-
 
   whichTransect <- 'control'
   control.group.1.tibl <- whichData %>%
@@ -146,24 +294,11 @@ bugs.tibl <- bugs.tibl %>%
     dplyr::rename(crabSpiders = Thomisidae..crab.spider.) %>%
     dplyr::group_by(week, position) %>%
     dplyr::summarize(crabSpiders=sum(crabSpiders), .groups='drop'  ) %>%
-    dplyr::filter(position %in% positions.group.1) %>%
+    dplyr::filter(position %in% {{pos}}) %>%
     dplyr::mutate(transect=whichTransect)
   
-  make-MWU-graphics(control= control.group.1.tibl, treatment=SNH.group.1.tibl)
-  
-  #
-  #
-```
-  
-  
-``` {r graphics-mann-whitney}
-  
-make-MWU-graphics <- function(control, treatment) {
-
-  # mirror https://stat-methods.com/home/mann-whitney-u-r/
-
   # append one tibble to the other
-  merged.tibl <- dplyr::bind_rows(control, treatment) 
+  merged.tibl <- dplyr::bind_rows(control.group.1.tibl, SNH.group.1.tibl) 
   # the tibble columns are
   #  // week : position : crabSpiders : transect //
   #
@@ -191,23 +326,6 @@ make-MWU-graphics <- function(control, treatment) {
   }
   
   
-  ggBox <- ggplot() +
-              stat_boxplot(geom ="errorbar", width = 0.5) +
-              geom_boxplot(control, mapping=aes(x = transect, y = crabSpiders, 
-                            fill = 'red')) + 
-              geom_boxplot(treatment, mapping=aes(x = transect, y = crabSpiders, 
-                            fill = 'green')) + 
-              stat_summary(fun.y=mean, geom="point", shape=10, size=3.5, color="black") + 
-              
-              expand_limits(y = c(.5,1)) +
-
-              labs(title = "poisson cumulative distribution function", 
-                    subtitle = "SNH transect (green), control transect (red)",
-                    caption = captionText,
-                    x = "transect", y = "crab spider counts") + 
-              theme_bw() + 
-              theme(legend.position="none")
-  
   # Test each group for normality
   # The Shapiro–Wilk test statistic (Calc W) is a measure of how well 
   # the ordered and standardized sample quantiles fit the standard normal 
@@ -224,7 +342,7 @@ make-MWU-graphics <- function(control, treatment) {
   # and numerical tools are inconclusive.
   # https://www.sciencedirect.com/topics/mathematics/wilk-test
   
-  merged.tibl %>%
+  normal.tibl <- merged.tibl %>%
     group_by(transect) %>%
     summarise(`W Stat` = shapiro.test(crabSpiders)$statistic,
               p.value = shapiro.test(crabSpiders)$p.value)
@@ -239,7 +357,7 @@ make-MWU-graphics <- function(control, treatment) {
       stat_qq_point(col="black") +
       facet_wrap(~ transect, scales = "free") +
       labs(x = "Theoretical Quantiles", y = "Sample Quantiles") + theme_bw()
-}
+  }
 
   # Mann-Whitney U test
   # ?wilcox.test Details : Otherwise, if both x and y are given and paired 
@@ -250,14 +368,48 @@ make-MWU-graphics <- function(control, treatment) {
   # for the difference of the location parameters x-y is computed.
   m1 <- wilcox.test(crabSpiders ~ transect, data=merged.tibl, na.rm=TRUE, 
                     paired=FALSE, exact=FALSE, conf.int=TRUE)
-  print(m1)
+
  
   # Hodges Lehmann Estimator
   # 'The Hodges–Lehmann statistic also estimates the difference between two populations.' per
   # https://en.wikipedia.org/wiki/Hodges%E2%80%93Lehmann_estimator
-  m1$estimate
+  #m1$estimate
+  
+  pv <- format(m1$p.value,nsmall=3)
+  
+  wilcoxon.txt <- paste("Mann-Whitney U Test ",
+    "(=Wilcoxon rank sum test with continuity correction)\n",
+    "null hypothesis: the two populations have the same continuous distribution\n",
+    "p-value : ", pv, sep="")
+                        
+  ggBox <- ggplot() +
+    
+    stat_boxplot(geom ="errorbar", width = 0.5) +
+    geom_boxplot(control.group.1.tibl, mapping=aes(x = transect, y = crabSpiders), 
+                            fill = 'red') + 
+    geom_boxplot(SNH.group.1.tibl, mapping=aes(x = transect, y = crabSpiders), 
+                            fill = 'green') + 
+    stat_summary(fun.y=mean, geom="point", shape=10, size=3.5, color="black") + 
+              
+    expand_limits(y = c(0,15)) +
+    
+    scale_x_discrete(labels=c("control" = "control", "oakMargin" = "SNH")) +
+
+    labs(title = "poisson cumulative distribution function", 
+        subtitle = paste(positionsCaption, "\n", 
+                          wilcoxon.txt,
+                          "\nSNH transect (green), control transect (red)",
+                          sep=""),
+        caption = "Mann-Whitney U",
+                    x = "transect", y = "crab spider counts") + 
+    theme_bw() + 
+    theme(legend.position="none")
+  
+  
+  return(ggBox)
 
 }
+
 
 ```
 
