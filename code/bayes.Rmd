@@ -1,0 +1,413 @@
+---
+title: "bayes"
+output: html_document
+date: "2023-02-21"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+
+# strategy: re-imagine the bayesian analysis
+
+# 1
+# statistical rethinking: estimate the populations
+# https://jabiologo.github.io/web/tutorials/nmixture.html
+
+# 2
+# copy poisson model
+# https://www.bayesrulesbook.com/chapter-12.html
+
+
+
+
+```
+
+```{r}
+
+
+library(ggplot2)
+library(gridExtra)
+library(dplyr)
+
+setwd("/Users/rcphelps/code/thesis/journalArticle/arXiv-preprint/code")
+
+# source("./code/k-means.R")
+
+
+source.url <- c("https://raw.githubusercontent.com/cordphelps/ampelos/master/data/bugs.csv")
+bugs.tibl <- as_tibble(read.csv(source.url, header=TRUE, row.names=NULL) )
+
+# remove all bugs except clab spider
+bugs.tibl <- bugs.tibl %>% 
+  dplyr::select(-Agapostemon.sp....green..native.bee., -Bombus.californicus..bumble., -Braconid.wasp, -checkerspot.butterfly, -Diabrotica.undecimpunctata..Cucumber.Beetle., -Diptera..Agromyzidae..leafminer.., -Halictus.sp....3.part..native.bee., -Honey.Bee, -ladyBug, -Lygus.hesperus..western.tarnished.plant.bug., -Orius..pirate.bug., -Osmia.sp...native.bee., -other, -pencilBug, -pentamonidae...stinkBug., -Pyralidae..Snout.Moth., -spider.other) 
+
+
+```
+
+
+
+```{r posWeek18}
+
+getPosWeek18 <- function(data, time) {
+
+  # for each position.group and week.group, return a record :
+  #
+  # //   state / transect / gop_2016 / crabSpiders / historical / percentEdge   //
+  
+  positions.group <- list()
+  positions.group[[1]] <- c(1, 2, 3)
+  positions.group[[2]] <- c(4, 5, 6, 7)
+  positions.group[[3]] <- c(8, 9, 10)
+  
+  pos.pct <- list()
+  pos.pct[[1]] <- 0.12
+  pos.pct[[2]] <- 0.3
+  pos.pct[[3]] <- 0.75
+  
+  weeks.group <- list()
+  weeks.group[[1]] <- c(23, 24, 25)
+  weeks.group[[2]] <- c(26, 27, 28, 29, 30, 31)
+  weeks.group[[3]] <- c(32, 33, 34)
+  
+  transects <- list()
+  transects[[1]] <- "oakMargin"
+  transects[[2]] <- "control"
+
+  whichData <- data <- bugs.tibl
+  whichTime <- time <- "pm"
+  
+  output.tibl <- tibble(crabSpiders = numeric(), 
+                        transect = character(), 
+                        posGroup = character(), 
+                        weeksGroup = character(),
+                        stateTPW = character(),
+                        historical = character(),
+                        percentEdge = numeric() )
+
+  for (k in 1:length(transects)) {
+    
+    for (i in 1:length(positions.group)) {
+
+      posGroup <- paste("posGroup", i, sep="")
+      new.tibl <- whichData %>%
+        dplyr::filter(transect==transects[[k]])  %>%
+        dplyr::filter(time==whichTime) %>%
+        dplyr::filter(position %in% positions.group[[i]]) %>%
+        dplyr::select(-positionX, -date, -time, -julian) %>%
+        dplyr::rename(crabSpiders = Thomisidae..crab.spider.) %>%
+        dplyr::group_by(week) %>%
+        dplyr::summarize(crabSpiders=sum(crabSpiders), .groups='drop'  ) 
+      
+      for (j in 1:length(weeks.group)) { 
+        
+         transectPlusPosPlusWeeks <- paste(transects[[k]], 
+                                            paste(positions.group[[i]], collapse=""), 
+                                            paste(weeks.group[[j]], collapse=""), 
+                                            sep=".")
+         
+        weeksGroup <- paste("weeksGroup", j, sep="")
+        newer.tibl <- new.tibl %>%
+          dplyr::filter(week %in% weeks.group[[j]]) %>%
+          dplyr::summarize(crabSpiders=sum(crabSpiders), .groups='drop'  ) %>%
+          dplyr::mutate(posGroup = posGroup, 
+                        weeksGroup = weeksGroup, 
+                        transect = transects[[k]],
+                        stateTPW = transectPlusPosPlusWeeks,
+                        historical = transects[[k]],
+                        percentEdge = pos.pct[[i]])
+        
+      # append one tibble to the other
+      output.tibl <- dplyr::bind_rows(newer.tibl, output.tibl)     
+        
+      }
+
+    }
+    
+  }
+  #
+  # result :  // crabSpiders / positionGroup / weeksGroup / transect 
+  #              stateTPW / historical / percentEdge //
+  #
+  # 18 "states" with counts and percent from edge
+  # 2 transects, 3 position-groups, 3 week-groups
+  #
+
+  return(output.tibl)
+}
+
+```
+
+
+
+```{r posWeek30}
+
+getPosWeek30 <- function(data, time) {
+
+  # for each position.group and week.group, return a record :
+  #
+  # //   state / transect / gop_2016 / crabSpiders / historical / percentEdge   //
+  
+  positions.group <- list()
+  positions.group[[1]] <- c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+  
+  weeks.group <- list()
+  weeks.group[[1]] <- c(23, 24, 25)
+  weeks.group[[2]] <- c(26, 27, 28, 29, 30, 31)
+  weeks.group[[3]] <- c(32, 33, 34)
+  
+  transects <- list()
+  transects[[1]] <- "oakMargin"
+  transects[[2]] <- "control"
+
+  whichData <- data 
+  whichTime <- time
+  
+  output.tibl <- tibble(crabSpiders = numeric(), 
+                        transect = character(), 
+                        posGroup = character(), 
+                        weeksGroup = character(),
+                        stateTPW = character(),
+                        historical = character(),
+                        percentEdge = numeric() )
+
+  for (k in 1:length(transects)) {
+    
+    for (i in 1:length(positions.group)) {
+
+      posGroup <- paste("posGroup", i, sep="")
+      new.tibl <- whichData %>%
+        dplyr::filter(transect==transects[[k]])  %>%
+        dplyr::filter(time==whichTime) %>%
+        dplyr::filter(position %in% positions.group[[i]]) %>%
+        dplyr::select(-date, -time, -julian) %>%
+        dplyr::rename(crabSpiders = Thomisidae..crab.spider.) %>%
+        dplyr::mutate(percentEdge = positionX/200)  %>%
+        dplyr::group_by(transect, position, percentEdge, week) %>%
+        dplyr::summarize(crabSpiders=sum(crabSpiders), .groups='drop'  ) 
+      
+      #  // transect, position, percentEdge, week, crabSpiders //
+      
+      for (j in 1:length(weeks.group)) { 
+        
+        if (FALSE) {
+         transectPlusPosPlusWeeks <- paste(transects[[k]], 
+                                          paste("position", i, sep=""), 
+                                          paste(weeks.group[[j]], collapse=""), 
+                                          sep=".")
+        }
+        
+        transectPlusPosPlusWeeks <- paste("state", k, j, i, sep=".") 
+         
+         
+        weeksGroup <- paste("weeksGroup", j, sep="")
+        newer.tibl <- new.tibl %>%
+                      dplyr::filter(week %in% weeks.group[[j]]) %>%
+                      dplyr::group_by(transect, position, percentEdge) %>%
+                      dplyr::summarize(crabSpiders=sum(crabSpiders), .groups='drop'  ) %>%
+                      dplyr::mutate(posGroup = posGroup, 
+                                    weeksGroup = weeksGroup, 
+                                    transect = transects[[k]],
+                                    stateTPW = transectPlusPosPlusWeeks,
+                                    historical = transects[[k]] ) %>%
+                      tidyr::unite(state, stateTPW, position, sep = ".", remove = FALSE)
+        
+        
+        #  // transect, position, percentEdge, crabSpiders, 
+        #     posGroup, weeksGroup, stateTPW, historical //
+        
+        # append one tibble to the other
+        output.tibl <- dplyr::bind_rows(newer.tibl, output.tibl)     
+        
+      }
+
+    }
+    
+  }
+
+  #
+  # 60 "states" with counts and percent from edge
+  # 2 transects, 10 positions, 3 week-groups
+  #
+
+  return(output.tibl)
+}
+
+```
+
+
+
+
+```{r}
+
+# https://www.bayesrulesbook.com/chapter-12.html
+
+library(bayesrules)
+library(rstanarm)
+library(bayesplot)
+library(tidyverse)
+library(tidybayes)
+library(broom.mixed)
+
+data(equality_index)
+equality <- equality_index
+# //   state          / region   / gop_2016 / laws   / historical / percent_urban  //
+
+  posWeek.tibl <- getPosWeek30(data=bugs.tibl, time="pm")
+# //   posGroup / weeksGroup / stateTPW / transect / gop_2016 / crabSpiders / historical / percentEdge   //
+
+  ###########################################
+  ggplot(equality, aes(x = laws)) + 
+  geom_histogram(color = "white", breaks = seq(0, 160, by = 10))
+  
+  ggplot(posWeek.tibl, aes(x = crabSpiders)) + 
+  geom_histogram(color = "white", breaks = seq(0, 80, by = 10))
+  
+  ###########################################
+  ggplot(equality, aes(y = laws, x = percent_urban, color = historical)) + 
+  geom_point()
+  
+  ggplot(posWeek.tibl, aes(y = crabSpiders, x = percentEdge, color = historical)) + 
+  geom_point()
+  
+   ###########################################
+  
+  # Simulate the Normal model
+equality_normal_sim <- stan_glm(laws ~ percent_urban + historical, 
+                                data = equality, 
+                                family = gaussian,
+                                prior_intercept = normal(7, 1.5),
+                                prior = normal(0, 2.5, autoscale = TRUE),
+                                prior_aux = exponential(1, autoscale = TRUE),
+                                chains = 4, iter = 5000*2, seed = 84735)
+
+# Posterior predictive check
+pp_check(equality_normal_sim, plotfun = "hist", nreps = 5) + 
+  geom_vline(xintercept = 0) + 
+  xlab("laws")
+
+  
+
+  # Simulate the Normal model
+spiders_normal_sim <- stan_glm(crabSpiders ~ percentEdge + historical, 
+                                data = posWeek.tibl, 
+                                family = gaussian,
+                                prior_intercept = normal(7, 1.5),
+                                prior = normal(0, 2.5, autoscale = TRUE),
+                                prior_aux = exponential(1, autoscale = TRUE),
+                                chains = 4, iter = 5000*2, seed = 84735)
+
+# Posterior predictive check
+pp_check(spiders_normal_sim, plotfun = "hist", nreps = 5) + 
+  geom_vline(xintercept = 0) + 
+  xlab("crabSpiders")
+
+
+  
+
+##########################################################################
+equality_model_prior <- stan_glm(laws ~ percent_urban + historical, 
+                                 data = equality, 
+                                 family = poisson,
+                                 prior_intercept = normal(2, 0.5),
+                                 prior = normal(0, 2.5, autoscale = TRUE), 
+                                 chains = 4, iter = 5000*2, seed = 84735, 
+                                 prior_PD = TRUE)
+
+prior_summary(equality_model_prior)
+
+
+equality %>% 
+  add_fitted_draws(equality_model_prior, n = 100) %>%
+  ggplot(aes(x = percent_urban, y = laws, color = historical)) +
+    geom_line(aes(y = .value, group = paste(historical, .draw))) + 
+    ylim(0, 100)
+
+
+spider_model_prior <- stan_glm(crabSpiders ~ percentEdge + historical, 
+                                 data = posWeek.tibl, 
+                                 family = poisson,
+                                 prior_intercept = normal(2, 0.5),
+                                 prior = normal(0, 2.5, autoscale = TRUE), 
+                                 chains = 4, iter = 5000*2, seed = 84735, 
+                                 prior_PD = TRUE)
+
+prior_summary(spider_model_prior)
+
+
+posWeek.tibl %>% 
+  add_fitted_draws(spider_model_prior, n = 100) %>%
+  ggplot(aes(x = percentEdge, y = crabSpiders, color = historical)) +
+    geom_line(aes(y = .value, group = paste(historical, .draw))) + 
+    ylim(0, 100)
+
+
+############### simulating the posterior (12.2) #############################
+
+equality_model <- update(equality_model_prior, prior_PD = FALSE)
+
+mcmc_trace(equality_model)
+mcmc_dens_overlay(equality_model)
+mcmc_acf(equality_model)
+
+
+
+spider_model <- update(spider_model_prior, prior_PD = FALSE)
+
+mcmc_trace(spider_model)
+mcmc_dens_overlay(spider_model)
+mcmc_acf(spider_model)
+
+#############################################################################
+
+
+set.seed(1)
+pp_check(equality_model, plotfun = "hist", nreps = 5) + 
+  xlab("laws")
+
+pp_check(equality_model) + 
+  xlab("laws")
+
+
+set.seed(1)
+pp_check(spider_model, plotfun = "hist", nreps = 5) + 
+  xlab("crabSpiders")
+
+pp_check(spider_model) + 
+  xlab("crabSpiders")
+
+
+#############################################################################
+
+################### interpreting the posterior 12.3  ########################
+
+
+equality %>%
+  add_fitted_draws(equality_model, n = 50) %>%
+  ggplot(aes(x = percent_urban, y = laws, color = historical)) +
+    geom_line(aes(y = .value, group = paste(historical, .draw)), 
+              alpha = .1) +
+    geom_point(data = equality, size = 0.1)
+
+tidy(equality_model, conf.int = TRUE, conf.level = 0.80)
+
+
+# this is bizarre, models predict more spiders at the deep end of the
+# transect
+
+posWeek.tibl %>%
+  add_fitted_draws(spider_model, n = 50) %>%
+  ggplot(aes(x = percentEdge, y = crabSpiders, color = historical)) +
+    geom_line(aes(y = .value, group = paste(historical, .draw)), 
+              alpha = .1) +
+    geom_point(data = posWeek.tibl, size = 0.1)
+
+tidy(spider_model, conf.int = TRUE, conf.level = 0.80)
+
+
+```
+
+

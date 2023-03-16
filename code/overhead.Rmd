@@ -1,0 +1,673 @@
+---
+title: "overhead"
+output: html_document
+date: "2023-02-20"
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+
+# this code will use the stats::kmeans() algorithm to identify clusters appearing in 
+# weekly crab spider counts.
+
+```
+
+
+```{r bytheway}
+
+# what is the rank of insect occurrence?
+  
+  skimr::skim(bugs.tibl)
+
+
+```
+
+
+```{r intro}
+
+library(ggplot2)
+library(gridExtra)
+library(dplyr)
+
+setwd("/Users/rcphelps/code/thesis/journalArticle/arXiv-preprint/code")
+
+# source("./code/k-means.R")
+
+
+source.url <- c("https://raw.githubusercontent.com/cordphelps/ampelos/master/data/bugs.csv")
+bugs.tibl <- as_tibble(read.csv(source.url, header=TRUE, row.names=NULL) )
+
+# remove all bugs except clab spider
+bugs.tibl <- bugs.tibl %>% 
+  dplyr::select(-Agapostemon.sp....green..native.bee., -Bombus.californicus..bumble., -Braconid.wasp, -checkerspot.butterfly, -Diabrotica.undecimpunctata..Cucumber.Beetle., -Diptera..Agromyzidae..leafminer.., -Halictus.sp....3.part..native.bee., -Honey.Bee, -ladyBug, -Lygus.hesperus..western.tarnished.plant.bug., -Orius..pirate.bug., -Osmia.sp...native.bee., -other, -pencilBug, -pentamonidae...stinkBug., -Pyralidae..Snout.Moth., -spider.other) 
+
+
+
+```
+
+
+```{r}
+
+library(ggplot2)
+library(gridExtra)
+library(dplyr)
+
+# from ampelos-overhead.Rmd
+source.url <- c("https://raw.githubusercontent.com/cordphelps/ampelos/master/data/bugs.csv")
+bugs.df <- read.csv(source.url, header=TRUE, row.names=NULL)
+
+```
+
+
+```{r bug-percentages}
+
+returnList <- scanBugPercentages(bugs.df)
+
+returnList <- createFamilyPercentages(returnList)
+
+plotBugPercentages(returnList, spidersOnly=FALSE)
+
+
+```
+
+
+
+```{r overhead}
+
+# from ampelos-overhead.Rmd
+
+weeks.vector <- getWeeks(bugs.df)
+
+for (i in 1:length(weeks.vector)) {
+  reducedData.df <- selectDataAcrossTransects(data=bugs.df, week=quo(weeks.vector[[i]]), species=quo(Thomisidae..crab.spider.))
+
+  g24 <- plotBugDistribution(data=reducedData.df, 
+                          cap=paste("crab spider occurrences", " week ", weeks.vector[[i]], sep=""))
+  
+  print(g24)
+  
+}
+
+
+```
+
+
+```{r}
+
+
+plotBugDistribution <- function (data, cap) {
+# from bug-library.R
+
+  # http://t-redactyl.io/blog/2016/02/creating-plots-in-r-using-ggplot2-part-6-weighted-scatterplots.html
+  gg <- ggplot(data, aes(positionX, row, size=totalSpiders)) +
+    geom_point(shape=21, colour = "purple", fill = "plum", alpha=0.6) +           # 
+    #scale_size_area(max_size = 20) +
+    # geom_count() probably more appropriate http://ggplot2.tidyverse.org/reference/scale_size.html
+    scale_size(range = c(1, 10)) +
+    scale_fill_continuous(low = "plum1", high = "purple4") +
+    scale_y_reverse(breaks = seq(40, 100, 5),
+                    sec.axis = sec_axis(~. * 2.4384 - 103.622,         #### 8*.3048=2.4384  40*8*.3084=103.622
+                                           breaks= seq(0, 350, 50),
+                                           name= "distance (m)")    ) +
+    expand_limits(y=c(30,100)) + 
+    scale_x_continuous(position='top', breaks=seq(-12,200,16), 
+                       sec.axis = sec_axis(~.*.3048,
+                                           breaks= seq(0, 80, 10),
+                                           name= "trap distance from field margin (m)"))  +
+    # ggtitle(title) +
+
+    labs( x = "trap distance from field margin (ft)", 
+          y = "row",
+          caption = cap) +
+
+    annotate("rect", xmin=4, xmax=210, ymin=42.5,ymax=54.5, alpha=0.2, fill="blue") +
+    annotate("rect", xmin=-12, xmax=5, ymin=42.5,ymax=54.5, alpha=0.2, fill="red") +
+
+    annotate("rect", xmin=4, xmax=210, ymin=78,ymax=90, alpha=0.2, fill="blue") +
+    annotate("rect", xmin=-12, xmax=5, ymin=78,ymax=90, alpha=0.2, fill="red") +
+
+    annotate("text", x = 95, y = 76, label = "SNH transect", colour="black") +
+    annotate("text", x = 95, y = 40, label = "control transect", colour="black") + # fill="white", 
+    theme_bw() +
+    #theme() + 
+    # theme(legend.position = "bottom", legend.direction = "horizontal") +
+    theme(legend.position = "none", legend.direction = "horizontal") +
+    theme(legend.box = "horizontal", legend.key.size = unit(1, "cm")) +
+    # coord_fixed(ratio=4)
+    coord_fixed(ratio=2)
+  
+  return(grid.arrange(gg, ncol=1, nrow=1))
+}
+
+
+
+scanBugPercentages <- function(df) {
+# from bug-library.R
+  # calculate count and percent by week (columns) for each bug (rows)
+
+  if (FALSE) {
+
+    df <- bugs.df
+
+  }
+
+  weeks.vector <- getWeeks(df)
+  bugList <- colnames(df[,5:22])
+
+  bugPct <- as.data.frame(df %>% select(5:22) %>% names())   # bug names as first column
+  # disapointing : https://stackoverflow.com/questions/42769650/how-to-dplyr-rename-a-column-by-column-index
+  # bugPct <- bugPct %>% rename_at( 1, ~"column1" ) %>% tibble::column_to_rownames('column1')
+  bugPct <- bugPct %>% rename_at( 1, ~"bugNames" )  # 
+
+  pctColNames <- list()
+
+  for (i in 1:length(weeks.vector)) {
+
+    trim.tbl <- as.data.frame(df %>% filter(week == weeks.vector[[i]]) %>% select(5:22) %>% colSums()) # append column representing totals 
+                                                                                                       # of each insect for week i
+    trim.tbl <- cbind(trim.tbl,round(prop.table(trim.tbl)*100,2))  # append column representing the percent of each insect for week i
+
+    colnames(trim.tbl) <- c(paste('week', weeks.vector[[i]], 'count', sep=""), paste('week', weeks.vector[[i]], 'pct', sep=""))
+    rownames(trim.tbl) <- NULL
+
+    pctColNames[[i]] <- paste('week', weeks.vector[[i]], 'pct', sep="")  # save the column names
+
+    bugPct <- dplyr::bind_cols(bugPct, trim.tbl)
+
+  }
+
+  returnList <- list()
+  returnList[[1]] <- bugPct        # count and percent by week (columns) for each bug (rows)
+  returnList[[2]] <- pctColNames   # week23pct, week24pct, ....
+  returnList[[3]] <- weeks.vector  # 23, 24, .....
+
+  return(returnList)
+
+}
+
+createFamilyPercentages <- function(list) {
+# from bug-library.R
+  # given the dataframe and a list of columns returned by scanBugPercentages, organize percentages 
+  # by individual families, return dataframes for each family of insects showing pct by week 
+
+  #        list[[1]]   # dataframe with all the data : count and percent by week (columns) for each bug (rows)
+  #        list[[2]]   # list of columns that contain the weekly percentages
+  #        list[[3]]   # vector of week numbers
+
+  dfBase <- list[[1]] %>% dplyr::select(bugNames)  # one column of bugNames
+
+  for (i in 1:length(list[[2]])) {    # get the percentage columns
+
+    temp.df <- list[[1]] %>% dplyr::select(list[[2]][[i]])
+
+    dfBase <- dplyr::bind_cols(dfBase, temp.df)
+
+  }
+
+  # dfBase is now columns of weekly insect pct and rows for each insect
+  # we are transforming the data into dataframes for 'families' of specific insects
+  # 
+  # each will be the sum of the percentages for each species in the family
+  #
+  # dfAraneae :      columns:   otherPct   spiderPct   avePct    week
+  #
+
+  dfCrab <- dfBase %>% dplyr::filter(bugNames == 'Thomisidae..crab.spider.')  # remove all insects except spiders
+  dfOther <- dfBase %>% dplyr::filter(bugNames == 'spider.other') 
+  dfAraneae <- dplyr::union(dfCrab, dfOther)  # one row for each spider; columns are percent for each week
+  dfAraneae <- squashFlip(df=dfAraneae, weekList=list[[3]], columnList=c('otherPct', 'spiderPct', 'week'))
+  dfAraneae$family <- 'Araneae'
+
+  dfDiptera <- dfBase %>% dplyr::filter(bugNames == 'Diptera..Agromyzidae..leafminer..') 
+  dfDiptera <- squashFlip(df=dfDiptera, weekList=list[[3]], columnList=c('dipteraPct', 'week'))
+  dfDiptera$family <- 'Diptera'
+
+  dfH1 <- dfBase %>% dplyr::filter(bugNames == 'Braconid.wasp')
+  dfH2 <- dfBase %>% dplyr::filter(bugNames == 'Halictus.sp....3.part..native.bee.')
+  dfH3 <- dfBase %>% dplyr::filter(bugNames == 'Agapostemon.sp....green..native.bee.')
+  dfH4 <- dfBase %>% dplyr::filter(bugNames == 'Osmia.sp...native.bee.')
+  dfH5 <- dfBase %>% dplyr::filter(bugNames == 'Honey.Bee')
+  dfH6 <- dfBase %>% dplyr::filter(bugNames == 'Bombus.californicus..bumble.')
+  dfHymenoptera <- dplyr::union(dfH1, dfH2)
+  dfHymenoptera <- dplyr::union(dfHymenoptera, dfH3)
+  dfHymenoptera <- dplyr::union(dfHymenoptera, dfH4)
+  dfHymenoptera <- dplyr::union(dfHymenoptera, dfH5)
+  dfHymenoptera <- dplyr::union(dfHymenoptera, dfH6)
+  dfHymenoptera <- squashFlip(df=dfHymenoptera, weekList=list[[3]], columnList=c('a', 'b', 'c', 'd', 'e', 'f', 'week'))
+  dfHymenoptera$family <- 'Hymenoptera'
+
+  dfHe1 <- dfBase %>% dplyr::filter(bugNames == 'Lygus.hesperus..western.tarnished.plant.bug.')
+  dfHe2 <- dfBase %>% dplyr::filter(bugNames == 'pentamonidae...stinkBug.')
+  dfHemiptera <- dplyr::union(dfHe1, dfHe2)
+  dfHemiptera <- squashFlip(df=dfHemiptera, weekList=list[[3]], columnList=c('a', 'b', 'week'))
+  dfHemiptera$family <- 'Hemiptera'
+
+  dfLep1 <- dfBase %>% dplyr::filter(bugNames == 'checkerspot.butterfly')
+  dfLep2 <- dfBase %>% dplyr::filter(bugNames == 'Pyralidae..Snout.Moth.') 
+  dfLepidoptera <- dplyr::union(dfLep1, dfLep2)
+  dfLepidoptera <- squashFlip(df=dfLepidoptera, weekList=list[[3]], columnList=c('a', 'b', 'week'))
+  dfLepidoptera$family <- 'Lepidoptera'
+
+  dfOther1 <- dfBase %>% dplyr::filter(bugNames == 'Orius..pirate.bug.')
+  dfOther2 <- dfBase %>% dplyr::filter(bugNames == 'Diabrotica.undecimpunctata..Cucumber.Beetle.')
+  dfOther3 <- dfBase %>% dplyr::filter(bugNames == 'other')
+  dfOther4 <- dfBase %>% dplyr::filter(bugNames == 'ladyBug')
+  dfOther5 <- dfBase %>% dplyr::filter(bugNames == 'pencilBug')
+  dfOther <- dplyr::union(dfOther1, dfOther2)
+  dfOther <- dplyr::union(dfOther, dfOther3)
+  dfOther <- dplyr::union(dfOther, dfOther4)
+  dfOther <- dplyr::union(dfOther, dfOther5)
+  dfOther <- squashFlip(df=dfOther, weekList=list[[3]], columnList=c('a', 'b', 'c', 'd', 'e', 'week'))
+  dfOther$family <- 'Other'
+
+
+  if (FALSE) {  # a manual verification that the percentages sum to 1
+
+    dfAraneae.temp <- dfAraneae %>% dplyr::select(sumPct)       # that's a dataframe every column except week
+    dfDiptera.temp <- dfDiptera %>% dplyr::select(sumPct)
+    dfHymenoptera.temp <- dfHymenoptera %>% dplyr::select(sumPct) 
+    dfHemiptera.temp <- dfHemiptera %>% dplyr::select(sumPct) 
+    dfLepidoptera.temp <- dfLepidoptera %>% dplyr::select(sumPct) 
+    dfOther.temp <- dfOther %>% dplyr::select(sumPct) 
+
+    dfTotal <- dplyr::bind_cols(dfDiptera.temp, dfHymenoptera.temp)
+    dfTotal <- dplyr::bind_cols(dfTotal, dfHemiptera.temp)
+    dfTotal <- dplyr::bind_cols(dfTotal, dfLepidoptera.temp)
+    dfTotal <- dplyr::bind_cols(dfTotal, dfOther.temp)
+    dfTotal <- dplyr::bind_cols(dfTotal, dfAraneae.temp)
+
+
+    dfTotal <- transform(dfTotal, sum = rowSums(dfTotal, na.rm = TRUE))
+
+
+  }
+
+  returnList <- list()
+  returnList[[1]] <- dfAraneae
+  returnList[[2]] <- dfDiptera
+  returnList[[3]] <- dfHymenoptera
+  returnList[[4]] <- dfHemiptera
+  returnList[[5]] <- dfLepidoptera
+  returnList[[6]] <- dfOther
+
+  return(returnList)
+
+}
+
+
+plotBugPercentages <- function(list, spidersOnly) {
+# from bug-library.R
+  dfAraneae <- list[[1]]
+  dfDiptera <- list[[2]]
+  dfHymenoptera <- list[[3]]
+  dfHemiptera <- list[[4]]
+  dfLepidoptera <- list[[5]]
+  dfOther <- list[[6]]
+
+  if (spidersOnly==TRUE) {
+
+    gg <- ggplot(dfAraneae) + 
+    
+      geom_point(aes(x=week, y=spiderPct, fill = "spiderPct"), shape=21, size=5, show.legend=TRUE) +
+      geom_point(aes(x=week, y=otherPct, fill = 'otherPct'), shape=21, size=5, show.legend=TRUE) +
+
+      scale_fill_manual(name = "", values = c("spiderPct" = "purple", "otherPct" = "violet"), labels = c("crab spider", "spider (other)")) +
+
+      ylim(c(0, 30)) + 
+      expand_limits(y=c(0,30)) + 
+      #coord_fixed(ratio=1/4) +     # control the aspect ratio of the output; "ratio" refers to the 
+      # ratio of the axis limits themselves
+    
+      scale_y_continuous(breaks = seq(min(0), max(30), by = 5)) +
+      scale_x_continuous(breaks=seq(22,40,2)) + 
+    
+    
+      #labs(title=paste("spider abundance", sep=""),
+      #subtitle=paste("percent of total insects by week", sep=""), 
+      labs(y="spider percentage", 
+          x="week", 
+          caption = paste("spider abundance\n", "percent of total insects by week", sep="") ) +
+    
+      theme_bw() +
+    
+      theme(legend.title = element_blank(),
+          legend.spacing.y = unit(0, "mm"), 
+          #legend.position=c(.9,.7),
+          legend.justification=c(1,0),
+          panel.border = element_rect(colour = "black", fill=NA),
+          aspect.ratio = 1, axis.text = element_text(colour = 1, size = 12),
+          legend.background = element_blank(),
+          legend.box.background = element_rect(colour = "black")) 
+
+    } else {
+
+      colours = c("oakMargin" = "#405E00", "control" = "#9BCC94")
+
+      gg <- ggplot() + 
+    
+        geom_jitter(data=dfOther, aes(x=week, y=sumPct, fill = family), shape=21, size=3, show.legend=TRUE) +
+        geom_jitter(data=dfAraneae, aes(x=week, y=sumPct, fill = family), shape=21, size=3, show.legend=TRUE) +
+        geom_jitter(data=dfDiptera, aes(x=week, y=sumPct, fill = family), shape=21, size=3, show.legend=TRUE) +
+        geom_jitter(data=dfHymenoptera, aes(x=week, y=sumPct, fill = family), shape=21, size=3, show.legend=TRUE) +
+        geom_jitter(data=dfHemiptera, aes(x=week, y=sumPct, fill = family), shape=21, size=3, show.legend=TRUE) +
+        geom_jitter(data=dfLepidoptera, aes(x=week, y=sumPct, fill = family), shape=21, size=3, show.legend=TRUE) +
+
+        scale_fill_manual(name = 'insect family', 
+          values = c('black','green', 'blue', 'violet', 'purple', 'red'), 
+          breaks = c("Other", 'Araneae', 'Diptera', 'Hymenoptera', 'Hemiptera', 'Lepidoptera'),
+          labels = c("other", "Araneae", 'Diptera', 'Hymenoptera', 'Hemiptera', 'Lepidoptera')) +
+
+        #guides(shape = guide_legend("insect family"))  +
+
+        ylim(c(0, 100)) + 
+        expand_limits(y=c(0,100)) + 
+        #coord_fixed(ratio=1/4) +     # control the aspect ratio of the output; "ratio" refers to the 
+        # ratio of the axis limits themselves
+    
+        #scale_y_continuous(trans='log10', breaks = seq(min(0), max(100), by = 20)) +
+        scale_y_continuous(trans='log10') +
+        annotation_logticks(sides='l') +
+
+        scale_x_continuous(breaks=seq(22,40,2)) + 
+    
+    
+        #labs(title=paste("insect abundance by taxonometric Order", sep=""),
+        # subtitle=paste("percent of total population by week", sep=""),
+        labs(y="percent", x="week", 
+          caption = paste("insect abundance by taxonometric Order\n", "percent of total population by week", sep="") ) +
+    
+        theme_bw() +
+    
+        theme(legend.title = element_blank(),
+          legend.spacing.y = unit(0, "mm"), 
+          #legend.position=c(.9,.7),
+          legend.justification=c(1,0),
+          panel.border = element_rect(colour = "black", fill=NA),
+          aspect.ratio = 1, axis.text = element_text(colour = 1, size = 12),
+          legend.background = element_blank(),
+          legend.box.background = element_rect(colour = "black")) 
+
+      }
+    
+  return(gg)
+
+}
+
+squashFlip <- function(df, weekList, columnList) {
+# from bug-library.R
+  
+  # convert row wise percent occurrance of bugs across weeks to 
+  # an average of these associated insects by week
+
+  # 
+  # inbound dataframe
+  #
+  #        bugNames   week1Pct   week2Pct  week3Pct  ...... 
+  # bugA
+  # bugB   
+  #
+  # weeklist   : a vector of week numbers occurring in the df
+  # columnList : a vector of row names ultimately to be applied as column names
+
+
+  if (FALSE) {
+    df <- dfShort
+    weekList <- list[[3]]
+    columnList <- c('otherPct', 'spiderPct', 'week')
+  }
+
+  df <- df %>% dplyr::select(-bugNames)  # remove the bugNames column
+  df <- df %>% rbind(as.character(weekList)) # add a row of week numbers
+  colnames(df) <- NULL
+  df <- as.data.frame(t(df)) # flip  = transpose https://stackoverflow.com/questions/6778908/transpose-a-data-frame
+  colnames(df) <- columnList
+  options(digits=4)  # https://stackoverflow.com/questions/26734913/r-converting-from-string-to-double
+  for (i in 1:length(columnList)) {
+    df[,columnList[[i]]] <- as.numeric(as.character((df[,columnList[[i]]]))) # https://stackoverflow.com/questions/3796266/change-the-class-from-factor-to-numeric-of-many-columns-in-a-data-frame
+  }
+
+  # now, just create an average of insects for this particular family dataframe. columnList represents the
+  # column names including 'week'. We could truncate the list to remove 'week', 
+  #          like so : columnList <- columnList [ - length(columnList) ] # ignore the week column (the last column in the list)
+  # and then use the modified columnList to define the columns that need to be used for the average
+  #           somewhat like : df <- df %>% rowwise() %>% dplyr::mutate(meanPct=mean(columnList))
+  # but mutate() is choking on that list, I think it is due to the old bogey of dyplr not accepting clean variables.
+  #            the solution may be here : https://datascience.blog.wzb.eu/2016/09/27/dynamic-columnvariable-names-with-dplyr-using-standard-evaluation-functions/
+  # the other approach is to remove the 'week' column, creat the average, then re-add the week column.
+  #
+  
+  temp.df <- df
+  temp.df <- temp.df %>% dplyr::select(week)                # that's a dataframe containing only week
+  df <- df %>% dplyr::select(-week)                         # that's a dataframe every column except week
+  df <- transform(df, sumPct = rowSums(df, na.rm = TRUE))  # finally, escaping the nightmare of dplyr https://stackoverflow.com/questions/12486264/average-across-columns-in-r-excluding-nas
+  df <- dplyr::bind_cols(df, temp.df)
+
+  # returning dataframe
+  #                                     /----------- use this average for graphing purposes
+  # species1.Pct .... speciesX.Pct   avePct   week
+  #
+  #
+
+  return(df)
+
+}
+
+
+selectDataAcrossTransects <- function(data, week, species) {
+# from bug-library.R
+        #dplyr::filter(transect == UQ(t), week == UQ(w)) # last comment
+        # https://www.reddit.com/r/rstats/comments/6zu5od/when_writing_functions_involving_dplyr_how_do_you/
+
+    test.df <- data %>% 
+        dplyr::filter(week == UQ(week))  %>%
+        dplyr::select(positionX, row, UQ(species)) %>%
+        dplyr::group_by(positionX, row) %>%
+        summarize(totalSpiders = sum(UQ(species), na.rm = T))
+
+  return(test.df)
+
+}
+
+
+```
+
+```{r}
+
+  
+  positions.group <- list()
+  positions.group[[1]] <- c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
+  
+  transects <- list()
+  transects[[1]] <- "oakMargin"
+  transects[[2]] <- "control"
+
+  whichData <- data 
+  whichTime <- time
+  
+  # testing
+  if (FALSE) {
+   whichData <- bugs.tibl 
+    whichTime <- "pm"   
+    k <- 1
+  }
+  
+  output.tibl <- tibble(crabSpiders = numeric(), 
+                        transect = character(), 
+                        posGroup = character(), 
+                        weeksGroup = character(),
+                        stateTPW = character(),
+                        historical = character(),
+                        percentEdge = numeric() )
+  
+  week.tibl <- whichData %>%
+        dplyr::filter(time==whichTime) %>%
+        dplyr::select(-date, -time, -julian) %>%
+        dplyr::rename(crabSpiders = Thomisidae..crab.spider.) %>%
+        dplyr::group_by(transect, week) %>%
+        dplyr::summarize(crabSpiders=sum(crabSpiders), .groups='drop'  )
+  
+  # get a list of the week labels ('weekXX')
+  weeks <- getWeeks(week.tibl)
+  # get a list of week IDs ('integers')
+  weekID.list <- dissectWeeks(w=weeks)
+  
+  ####################################################################
+
+  captionText <- paste("crab spiders by week", 
+                       "\ndaytime : ", whichTime, sep="")
+  
+  ggWeek <- ggplot() + 
+
+      geom_bar(data=week.tibl, aes(y=crabSpiders, x = factor(week), fill = transect, colour = transect), stat="identity", alpha=.3, position = "dodge") +
+	
+      scale_y_continuous(breaks = seq(min(0), max(100), by = 10)) +
+	  
+	     scale_x_discrete(breaks=weeks, labels=weekID.list) +
+
+        labs(x="week number", y="crab spiders", caption = captionText ) +
+    
+  	theme_bw() +
+	  
+    theme(
+          # axis.text.x = element_text(angle = 45),
+          panel.border = element_rect(colour = "black", fill=NA),
+          legend.position="bottom",
+          legend.title = element_blank()
+          ) 
+  
+
+  ####################################################################
+   
+  julian.tibl <- whichData %>%
+        dplyr::filter(time==whichTime) %>%
+        dplyr::select(-date, -time) %>%
+        dplyr::rename(crabSpiders = Thomisidae..crab.spider.) %>%
+        dplyr::mutate(transect = str_replace(transect, "oakMargin", "SNH")) %>%
+        dplyr::group_by(transect, julian) %>%
+        dplyr::summarize(crabSpiders=sum(crabSpiders), .groups='drop'  ) %>%
+        dplyr::group_by(transect) %>%
+        dplyr::mutate(cum_spiders = cumsum(crabSpiders))
+ 
+
+  captionText <- paste("crab spiders by julian day", 
+                       "\ndaytime : ", whichTime, sep="")
+  
+  ggJulian <- ggplot() + 
+
+      # geom_bar(data=julian.tibl, aes(y=crabSpiders, x = factor(julian), fill = transect, colour = transect), stat="identity", alpha=.3, position = "dodge") +
+     
+      geom_line(data=julian.tibl, aes(y=crabSpiders, x = factor(julian), colour = transect, group=transect)) +
+	
+      scale_y_continuous(breaks = seq(min(0), max(100), by = 10)) +
+
+      labs(x="julian day 2018", y="crab spiders", caption = captionText ) +
+    
+  	  theme_bw() +
+	  
+      theme(
+          axis.text.x = element_text(angle = 45),
+          panel.border = element_rect(colour = "black", fill=NA),
+          legend.position="bottom",
+          legend.title = element_blank()
+          ) 
+  
+  ####################################################################
+
+  captionText <- paste("cumulative crab spiders", 
+                       "\ndaytime : ", whichTime, sep="")
+     
+  ggCumulative <- ggplot() + 
+
+      # geom_bar(data=julian.tibl, aes(y=crabSpiders, x = factor(julian), fill = transect, colour = transect), stat="identity", alpha=.3, position = "dodge") +
+     
+      geom_line(data=julian.tibl, aes(y=cum_spiders, x = factor(julian), colour = transect, group=transect)) +
+	
+      scale_y_continuous(breaks = seq(min(0), max(250), by = 50)) +
+
+      labs(x="julian day 2018", y="crab spiders", caption = captionText ) +
+    
+  	  theme_bw() +
+	  
+      theme(
+          axis.text.x = element_text(angle = 45),
+          panel.border = element_rect(colour = "black", fill=NA),
+          legend.position="bottom",
+          legend.title = element_blank()
+          ) 
+  
+  
+  if (FALSE) {
+    
+    # max flexibility mode for ggplot
+      
+    week.tibl <- whichData %>%
+        dplyr::filter(transect==transects[[k]])  %>%
+        dplyr::filter(time==whichTime) %>%
+        dplyr::select(-date, -time, -julian) %>%
+        dplyr::rename(crabSpiders = Thomisidae..crab.spider.) %>%
+        dplyr::group_by(transect, position, week) %>%
+        dplyr::summarize(crabSpiders=sum(crabSpiders), .groups='drop'  )
+
+      p1.tibl <- week.tibl %>% dplyr::filter(position==1)
+      p2.tibl <- week.tibl %>% dplyr::filter(position==2)
+      p3.tibl <- week.tibl %>% dplyr::filter(position==3)
+      p4.tibl <- week.tibl %>% dplyr::filter(position==4)
+      p5.tibl <- week.tibl %>% dplyr::filter(position==5)
+      p6.tibl <- week.tibl %>% dplyr::filter(position==6)
+      p7.tibl <- week.tibl %>% dplyr::filter(position==7)
+      p8.tibl <- week.tibl %>% dplyr::filter(position==8)
+      p9.tibl <- week.tibl %>% dplyr::filter(position==9)
+      p10.tibl <- week.tibl %>% dplyr::filter(position==10)
+  
+      # get a list of the week labels ('weekXX')
+      weeks <- getWeeks(p1.tibl)
+      # get a list of week IDs ('integers')
+      weekID.list <- dissectWeeks(w=weeks)
+        captionText <- "stuff"
+  
+	gg <- ggplot() + 
+
+  	      geom_line(data=p1.tibl, aes(y = crabSpiders, x = factor(weeks), group=1), linewidth=1) +
+	  
+	        geom_jitter(data=p2.tibl, aes(y = crabSpiders, x = factor(weeks)), shape = 21, size=4) +
+	  
+	        geom_jitter(data=p3.tibl, aes(y = crabSpiders, x = factor(weeks)), shape = 21, size=4) +
+	  
+	        geom_jitter(data=p4.tibl, aes(y = crabSpiders, x = factor(weeks)), shape = 21, size=4) +
+	  
+	        geom_jitter(data=p5.tibl, aes(y = crabSpiders, x = factor(weeks)), shape = 21, size=4) +
+	  
+	        geom_jitter(data=p6.tibl, aes(y = crabSpiders, x = factor(weeks)), shape = 21, size=4) +
+	  
+  	      geom_jitter(data=p7.tibl, aes(y = crabSpiders, x = factor(weeks)), shape = 21, size=4) +
+	  
+	        geom_jitter(data=p8.tibl, aes(y = crabSpiders, x = factor(weeks)), shape = 21, size=4) +
+	  
+  	      geom_jitter(data=p9.tibl, aes(y = crabSpiders, x = factor(weeks)), shape = 21, size=4) +
+	  
+	        geom_jitter(data=p10.tibl, aes(y = crabSpiders, x = factor(weeks)), shape = 21, size=4) +
+	
+          expand_limits(y=c(0,20)) +
+          scale_y_continuous(breaks = seq(min(0), max(20), by = 2)) +
+	  
+	        scale_x_discrete(breaks=weeks, labels=weekID.list) +
+
+          #coord_fixed(ratio=1) + # control the aspect ratio
+
+         labs(x="week number", y="crab spiders", caption = captionText ) +
+
+  	theme_bw() +
+	  
+    theme(
+          # axis.text.x = element_text(angle = 45),
+          panel.border = element_rect(colour = "black", fill=NA),
+          legend.position="bottom",
+          legend.title = element_blank()
+          ) 
+  }
+  
+  
+
+```
+

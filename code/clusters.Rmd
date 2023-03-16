@@ -14,13 +14,20 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
+```{r bytheway}
+
+# what is the rank of insect occurrence?
+  
+  skimr::skim(bugs.tibl)
+
+
+```
+
 
 ```{r intro}
 
 library(ggplot2)
 library(gridExtra)
-library(geomtextpath)
-
 library(dplyr)
 
 setwd("/Users/rcphelps/code/thesis/journalArticle/arXiv-preprint/code")
@@ -39,25 +46,464 @@ bugs.tibl <- bugs.tibl %>%
 
 ```
 
+
+```{r jaccard}
+
+# note: jaccard and kmeans() don't seem to stand alone. need a more cohesive
+# analysis of populations
+# https://www.zoology.ubc.ca/~krebs/downloads/krebs_chapter_12_2017.pdf
+# especially section 12.4
+#
+
+
+# from ampelosOriginal.Rmd
+
+### each of the two transects consists of 3 rows of 10 traps in each row. Is the total insect population relatively uniform among the 3 rows of a transect? Does this uniformity change over time? Compute the Jaccard Index for each week: the index *'is a statistic used for comparing the similarity and diversity of sample sets.'* 
+
+# Note that *'... the SMC counts both mutual presences (when an attribute is present in both sets) and mutual absence (when an attribute is absent in both sets) as matches and compares it to the total number of attributes in the universe, whereas the Jaccard index only counts mutual presence as matches and compares it to the number of attributes that have been chosen by at least one of the two sets.'* (https://en.wikipedia.org/wiki/Jaccard_index)
+
+source("./code/jaccard-Similarity.R")
+
+g.oak <- compareJaccardMultiWeekV4(data=bugs.df, ignoreBees=TRUE,
+                                  t="oakMargin",
+                                  transectText="SNH",
+                                  daytime='pm')
+
+g.control <- compareJaccardMultiWeekV4(data=bugs.df, ignoreBees=TRUE,
+                                  t="control",
+                                  transectText="control",
+                                  daytime='pm')
+
+print(g.oak)
+print(g.control)
+
+```
+
+
+```{r jaccard-stuff}
+
+# from jaccard-Similarity.R
+
+
+compareJaccardMultiWeekV4 <- function(data, ignoreBees, t, transectText, daytime) {
+
+  # develop the data for similarity graphs that compare the populations of adjacent rows
+  #
+  # the resulting dataframe has similarity variables (jaccard and SME) for each
+  # week by transect 
+  #
+  # this function is intended to be called from ampelos.Rmd
+  #
+
+  library(dplyr)
+
+  #data <- bugs.df
+  #ignoreBees <- TRUE
+  #t <- "control"
+
+  weeks.vector <- getWeeks(data)                    # determine weeks in the dataset
+  weeks.df <- dplyr::bind_cols(week = weeks.vector) # place weeks in a column
+
+  data <- data %>%  dplyr::rename(
+                        Lygus.hesperus = Lygus.hesperus..western.tarnished.plant.bug., 
+                        cucumber.beetle = Diabrotica.undecimpunctata..Cucumber.Beetle.) 
+
+  captionComment <- paste("transect: ", transectText, "daytime: ", daytime, "\n(bees included)", sep="")
+
+  if (ignoreBees == TRUE) { 
+
+    captionComment <- paste("transect: ", transectText, " daytime: ", daytime, "\n(bees ignored)", sep="")
+
+    data <- data %>% dplyr::select( 
+      -Agapostemon.sp....green..native.bee.,
+      -Bombus.californicus..bumble.,
+      -checkerspot.butterfly,
+      -cucumber.beetle,
+      -Halictus.sp....3.part..native.bee.,
+      -Honey.Bee,
+      -Osmia.sp...native.bee.)
+
+  }
+
+  data <- data %>% 
+    dplyr::filter(transect == t) %>% 
+    dplyr::filter(time == daytime) %>%
+    dplyr::select(-position, -positionX, -transect, -julian, -time, -date) 
+
+
+  
+  ## testing : > bugRowsJaccardSimilarityV2(df=bugs.df, t="control", w=getWeeks(data)[1])
+
+## A tibble: 3 x 20
+#    row Diptera..Agromyzid… Braconid.wasp Halictus.sp....3.p… pencilBug Agapostemon.sp...…
+#  <dbl>               <dbl>         <int>               <dbl>     <dbl>              <dbl>
+#1     1                   1             0                   1         1                  0
+#2     1                   1             0                   1         0                  1
+#3     1                   1             0                   1         0                  0
+# ... with 14 more variables: Osmia.sp...native.bee. <dbl>, Honey.Bee <dbl>,
+#   Bombus.californicus..bumble. <dbl>, Thomisidae..crab.spider. <dbl>,
+#   spider.other <dbl>, ladyBug <dbl>, Lygus.hesperus <dbl>,
+#   pentamonidae...stinkBug. <int>, other <dbl>, checkerspot.butterfly <dbl>,
+#   Pyralidae..Snout.Moth. <dbl>, cucumber.beetle <dbl>, Orius..pirate.bug. <int>,
+#   week <dbl>
+
+
+  obs <- list()
+  j <- 0
+  temp.df <- data %>% dplyr::group_by(row) 
+
+  for(i in weeks.vector) {
+
+    j <- j + 1
+
+    temp2.df <- temp.df %>%
+      dplyr::filter(week == i) %>%
+      dplyr::summarise_all(funs(sum)) 
+
+    temp3.df <- ade4Similarity(temp2.df) # 
+
+#> ade4Similarity(data)
+#  Var1 Var2 left right   jaccard       SME
+#1    1    2    1     2 0.5477226 0.4803845
+#2    1    3    1     3 0.4472136 0.3922323
+#3    2    3    2     3 0.6741999 0.6201737
+
+#> mean(data$jaccard)   [1] 0.5563787 > mean(data$SME)  [1] 0.4975968
+
+    obs[[j]] <- data.frame(transect=t, week=i, jaccard=mean(temp3.df$jaccard), SME=mean(temp3.df$SME))
+
+  }
+
+  # make one df for plotting
+  plot.df <- dplyr::bind_rows(obs)
+
+  #grid <- plotSimilarity(plot.df, transectText, captionComment)
+  gg <- plotSimilarity(df=plot.df, text=captionComment)
+
+  return(gg)
+
+}
+
+
+
+plotSimilarity <- function(df, text) {
+
+
+  library(ggplot2)
+
+
+  g <- ggplot(df) + 
+      geom_jitter(aes(x=week, y=1-SME, colour = "mediumvioletred", fill = "plum1"), width = 0.1, height = 0.1, 
+        show.legend = TRUE, shape = 21, size=5) + 
+      geom_jitter(aes(x=week, y=1-jaccard, colour = "mediumvioletred", fill = "purple1"), width = 0.1, height = 0.1, 
+        show.legend = TRUE, shape = 21, size=5) + 
+
+      scale_fill_identity(name = 'method', guide = 'legend', breaks = c('plum1'='plum1','purple1'='purple1'), 
+        labels = c('SMC','Jaccard')) +
+      guides(colour=FALSE) +
+      theme(legend.position = "right", legend.direction = "vertical") +
+
+      ylim(c(0, 1)) + 
+      # scale_y_continuous(breaks = seq(min(0), max(1), by = 0.1)) +
+      expand_limits(y=c(0,1)) + 
+      scale_x_continuous(breaks=seq(22,40,2)) +
+
+      labs(
+          y="index", 
+          x="week", 
+          caption = paste("transect: row triad population similarity, Jaccard and SMC", 
+            "\nweekly mean of row-to-row indicies\n", 
+            text, sep="" ) ) +
+
+      #theme(legend.position="none") +
+      theme(legend.position = "bottom", legend.direction = "horizontal") +
+      theme_bw() 
+      #coord_fixed(ratio=5) # control the aspect ratio of the output
+      # https://stackoverflow.com/questions/7056836/how-to-fix-the-aspect-ratio-in-ggplot
+
+  
+    return(g)
+
+  }
+
+
+  ade4Similarity <- function(data) {
+
+    # checking the logic by hand
+    #
+    #      1 obs1   1   0   1
+    #      2 obs2   0   0   0
+    #      3 obs3   0   0   1
+    #      4 obs4   1   0   1
+    #      5 obs5   1   1   0
+    #      6 obs6   1   1   1
+    #      7 obs7   1   0   0
+    #      8 obs8   1   0   0
+    #      9 obs9   1   0   1
+    #
+    # the jaccard distance between observation 1 and observation 3 is:
+    #
+    # - shared = count the number of matches (where a 1 in the first member matches a 1 in the second) :  1
+    # - total = count the number of 1 vs 0 and 0 vs 1 : 1
+    # - similarity coefficient : divide shared by (total plus shared) : .5
+    # - distance : square root of 1 minus the similarity coefficient : .707
+    #
+    #
+    # the jaccard distance between observation 5 and observation 6 is:
+    #
+    # - shared = count the number of matches (where a 1 in the first member matches a 1 in the second) :  2
+    # - total = count the number of 1 vs 0 and 0 vs 1 : 1
+    # - similarity coefficient : divide shared by (total plus shared) : .666
+    # - distance : square root of 1 minus the similarity coefficient :  .577
+
+    # R> # remove non-numeric values (the row names)
+    # R> test.df <- test.df %>% dplyr::select(-X)
+    # R> ade4::dist.binary(test.df, method=1, diag=F, upper=F)  
+    # 
+#          1         2         3         4         5         6         7         8         9
+#1 0.0000000                                                                                
+#2 1.0000000 0.0000000                                                                      
+#3 0.7071068 1.0000000 0.0000000                                                            
+#4 0.0000000 1.0000000 0.7071068 0.0000000                                                  
+#5 0.8164966 1.0000000 1.0000000 0.8164966 0.0000000                                        
+#6 0.5773503 1.0000000 0.8164966 0.5773503 0.5773503 0.0000000                              
+#7 0.7071068 1.0000000 1.0000000 0.7071068 0.7071068 0.8164966 0.0000000                    
+#8 0.7071068 1.0000000 1.0000000 0.7071068 0.7071068 0.8164966 0.0000000 0.0000000          
+#9 0.0000000 1.0000000 0.7071068 0.0000000 0.8164966 0.5773503 0.7071068 0.7071068 0.0000000
+
+    # https://pbil.univ-lyon1.fr/ade4/ade4-html/dist.binary.html
+    # 
+#> data
+#  sp1 sp2 sp3
+#1   1   0   1
+#2   0   0   0
+#3   0   0   1
+#4   1   0   1
+#5   1   1   0
+#6   1   1   1
+#7   1   0   0
+#8   1   0   0
+#9   1   0   1
+
+    # add row numbers to the df
+    # https://stackoverflow.com/questions/23518605/add-an-index-numeric-id-column-to-large-data-frame
+    data <- tibble::rowid_to_column(data, "rowID")
+
+#> data
+#  rowID sp1 sp2 sp3
+#1     1   1   0   1
+#2     2   0   0   0
+#3     3   0   0   1
+#4     4   1   0   1
+#5     5   1   1   0
+#6     6   1   1   1
+#7     7   1   0   0
+#8     8   1   0   0
+#9     9   1   0   1
+
+    # save the list
+    name.list <- data.frame(data$rowID)
+
+#> name.list
+#  data.rowID
+#1          1
+#2          2
+#3          3
+#4          4
+#5          5
+#6          6
+#7          7
+#8          8
+#9          9
+
+    # values > 1 re-written as 1
+    data[data > 0] <- 1
+
+    #row.names(data) <- name.list$data.row   # NOTE: apparently deprecated
+
+    key_pairs <- expand.grid(name.list$data.row, name.list$data.row)  # column names are Var1 and Var2
+
+    key_pair <- key_pairs %>% mutate(pair = paste(Var1,"_",Var2,sep=""))  # column names are Var1 and Var2
+                                                                          # plus pair-ID in the form "row1-row2"
+
+
+        # for each combination, make a 2 row matrix 
+        #for (i in 1:nrow(key_pairs)) {   # 9 rows of 2 variables expands to 81 pairs
+          #print(i)
+          #print(key_pairs$Var1[i])
+          #print(paste( slice ( data, key_pairs$Var1[i]   )) )
+        #}
+
+#> key_pairs
+#........
+#79    7    9
+#80    8    9
+#81    9    9
+#> key_pairs$Var1[81]
+#[1] 9
+#> key_pairs$Var1[80]
+#[1] 8
+#> key_pairs$Var2[80]
+#[1] 9
+
+    # remove duplicates and mirrored data
+    # walk through rows deleting all rows that are compared to themselves
+
+    results <-  tibble::rownames_to_column(key_pair, var = "rowname")  # added a column "rowname",
+                                                                            # contents are : "rowA_rowB"
+
+    results2 <- key_pair %>% tidyr::separate("pair", c("left", "right"), "_") # replace column 'rowname' with two new rows
+                                                                                    # contains 'rowA' and 'rowB'
+    results3 <- results2 %>% dplyr::filter(results2$left != results2$right)  # remove self comparisons
+    results4 <- results3 %>% dplyr::filter(results3$left < results3$right)   # remove duplicates (mirror images)
+
+#> nrow(results4)
+#[1] 36
+#> results4
+#   Var1 Var2 left right
+#1     1    2    1     2
+#2     1    3    1     3
+#3     2    3    2     3
+#4     1    4    1     4
+#5     2    4    2     4
+#6     3    4    3     4
+#7     1    5    1     5
+
+
+    data.matrix <- as.matrix(dplyr::select(data, -rowID))
+
+#> data.matrix
+#  sp1 sp2 sp3
+#1   1   0   1
+#2   0   0   0
+#3   0   0   1
+#4   1   0   1
+#5   1   1   0
+#6   1   1   1
+#7   1   0   0
+#8   1   0   0
+#9   1   0   1
+
+    
+    new_column_val1.vector <- vector()   # init an empty vector to contain a distance measurement (from dist.ade4() )
+    new_column_val2.vector <- vector()
+
+    for (i in 1:nrow(results4)) {   # 9 rows of 2 variables expands to 81 pairs; reduces to 36 unique pairs
+
+          #print(paste(  " sliceA ", data.matrix[ as.integer(results4$left[i]), ]  , 
+          #              " sliceB ", data.matrix[ as.integer(results4$right[i]), ] , sep="") )
+
+          leftData.matrix <- as.matrix(data.matrix[ as.integer(results4$left[i]), ], nrow=1)   # get data by a row number
+          rightData.matrix <- as.matrix(data.matrix[ as.integer(results4$right[i]), ], nrow=1)  # get data by a row number
+
+          # ! matrix filled column by column, not row by row !
+          # join.matrix <- matrix(c(leftData.matrix, rightData.matrix), 2, 3)
+
+          # (so work with data frames....)
+
+          temp.df <- t(bind_cols(data.frame(leftData.matrix, row.names=NULL), data.frame(rightData.matrix, row.names=NULL)))
+
+#>temp.df
+#   V1 V2 V3
+# 1  1  0  1
+# 2  0  0  0
+#   V1 V2 V3
+# 1  1  0  1
+# 2  0  0  1
+#   V1 V2 V3
+# 1  0  0  0
+# 2  0  0  1
+
+          #dist.binary(temp.df, method=1, diag=F, upper=F)  # output: 0.7071068   class='dist'
+          #dist.binary(temp.df, method=2, diag=F, upper=F)  # output: 0.5773503
+
+          # Jaccard distance
+          # object dist is coerced to a matrix with as.matrix()
+          row1.row2.m1.matrix <- as.matrix(ade4::dist.binary(temp.df, method=1, diag=F, upper=F))  
+          # Simple Matching Coefficient distance
+          row1.row2.m2.matrix <- as.matrix(ade4::dist.binary(temp.df, method=2, diag=F, upper=F)) 
+
+#> row1.row2.m1.matrix
+#          1         2
+#1 0.0000000 0.7071068
+#2 0.7071068 0.0000000
+
+          # get the distance values
+          jaccard.Distance <- row1.row2.m1.matrix[1,2]
+          SME.Distance <- row1.row2.m2.matrix[1,2]
+
+
+          # add them to the vector
+          if (length(new_column_val1.vector)>0) {
+            new_column_val1.vector <- c(new_column_val1.vector, jaccard.Distance)
+            new_column_val2.vector <- c(new_column_val2.vector, SME.Distance)
+          } else {
+            new_column_val1.vector <- jaccard.Distance
+            new_column_val2.vector <- SME.Distance
+          }
+
+    }
+
+    # new_column_val1.vector now contains distance data for each 'unique' row conbination
+    # a new column (for each distance value) that can be bound to result4 with dplyr::bind_cols()
+
+    # add the vector(s) to the result4.df as a new column(s)
+    results5 <- dplyr::bind_cols(results4, data.frame(jaccard=new_column_val1.vector))
+    results5 <- dplyr::bind_cols(results5, data.frame(SME=new_column_val2.vector))
+
+    
+    return(results5)
+
+
+
+  }
+
+  
+```
+
+
 ```{r chisq-distribution}
 
   positions.group.1 <- c(1, 2, 3)
   positions.group.2 <- c(4, 5, 6, 7)
   positions.group.3 <- c(8, 9, 10)
+  
+  whichData <- data
+	#whichData <- bugs.tibl
+	# two trap collection time periods : 'am' and 'pm'
+  whichTime <- time
+	#whichTime <- 'pm'
+	# two transects : 'control' and 'oakMargin' (= semi-natural habitat / SNH)
+	whichTransect <- 'oakMargin'
+  SNH.group.1.new.tibl <- whichData %>%
+    dplyr::filter(transect==whichTransect)  %>%
+    dplyr::filter(time==whichTime) %>%
+    dplyr::filter(position %in% {{pos}}) %>%
+    dplyr::select(-positionX, -date, -time, -julian) %>%
+    dplyr::rename(crabSpiders = Thomisidae..crab.spider.) %>%
+    dplyr::group_by(week) %>%
+    dplyr::summarize(crabSpiders=sum(crabSpiders), .groups='drop'  ) %>%
 
-  chisq.p1.gg <- chsqStatistics(data=bugs.tibl, pos=positions.group.1, time="pm")
-  chisq.p2.gg <- chsqStatistics(data=bugs.tibl, pos=positions.group.2, time="pm")
-  chisq.p3.gg <- chsqStatistics(data=bugs.tibl, pos=positions.group.3, time="pm")
+    dplyr::mutate(transect=whichTransect)
+
+  chisq.p1.gg <- chiSqStatistics(data=bugs.tibl, 
+                                 pos=positions.group.1, 
+                                 time="pm")
+  chisq.p2.gg <- chiSqStatistics(data=bugs.tibl, 
+                                 pos=positions.group.2, 
+                                 time="pm")
+  chisq.p3.gg <- chiSqStatistics(data=bugs.tibl, 
+                                 pos=positions.group.3,
+                                 time="pm")
   
   
 
 ```
 
 
-
 ```{r chi-sq}
 
-chsqStatistics <- function(data, pos, time) {
+chiSqStatistics <- function(data, pos, time) {
 
 # The KS-Test and other tests such as Anderson Darling are used for continuous
 # distributions. For discrete distributions, you can use the Chi-Square goodness 
@@ -69,7 +515,7 @@ chsqStatistics <- function(data, pos, time) {
 # good graphical explanation of test statistics at the bottom
 # https://www.jmp.com/en_sg/statistics-knowledge-portal/chi-square-test/chi-square-goodness-of-fit-test.html#:~:text=What%20is%20the%20Chi%2Dsquare,representative%20of%20the%20full%20population.
 # 
-
+  positionsCaption <- paste("vineyard rows ", pos[[1]], " - ", last(pos), sep="")
 
   whichData <- data
 	#whichData <- bugs.tibl
@@ -112,15 +558,15 @@ chsqStatistics <- function(data, pos, time) {
   # result : // (a vector of spider counts)
   #
   
-  stats.p1 <- chisq.test(x=control.vector, y=snh.vector)
+  stats <- chisq.test(x=control.vector, y=snh.vector)
   
   # http://ianmadd.github.io/pages/Confidence_Intervals_Part4.html
   # probability based on a quantile
-  probabilityDensity.p1 <- pchisq(stats.p1$statistic, df = stats.p1$parameter)
+  probabilityDensity <- pchisq(stats$statistic, df = stats$parameter)
   #      .9368 = pchisq(48.58, df = 35)
-  degreesFreedom.p1 <- stats.p1$parameter
+  degreesFreedom <- stats$parameter
   # quantile based on a probability. (value of the x axis)
-  chi95pct.p1 <- qchisq(.95, df=stats.p1$parameter)
+  chi95pct <- qchisq(.95, df=stats$parameter)
   #      49.80 = qchisq(.95, df = 35)
   #
   # ref : https://www.jmp.com/en_sg/statistics-knowledge-portal/chi-square-test/chi-square-goodness-of-fit-test.html
@@ -130,23 +576,40 @@ chsqStatistics <- function(data, pos, time) {
   # we can calculate the expected frequencies (under the null hypothesis):
   # 
   
+  xLabel.txt <- paste("Chi-Square Test Statistic, ", degreesFreedom,
+                      " degrees of freedom", sep="")
+  # "null hypothesis : each transect records the same distribution of spider counts \n", "p-value : ", stats$p.value, 
+  tsLabel <- paste("test statistic : ", round(stats$statistic, 3), sep="")
+      
 
       # https://stackoverflow.com/questions/48908296/chi-square-density-graph-in-r
   gg <- ggplot() +
     
-      stat_function(fun = dchisq, args = list(df = degreesFreedom.p1)) +
+      stat_function(fun = dchisq, args = list(df = degreesFreedom)) +
       # https://stackoverflow.com/questions/48753007/using-stat-function-to-draw-partially-shaded-normal-curve-in-ggplot2                 
-      stat_function(fun = dchisq, args = list(df = degreesFreedom.p1),
-                   xlim = c(0, chi95pct.p1),
+      stat_function(fun = dchisq, args = list(df = degreesFreedom),
+                   xlim = c(0, chi95pct),
                   geom = "area", fill = "green", alpha = .4) +
+
+    expand_limits(x = c(0,75), y = c(0, 0.06)) +
     
-    #geom_vline(xintercept = chi95pct) +
-    geom_vline(xintercept = stats.p1$statistic) +
-    expand_limits(x = c(0,75)) +
-    geom_textvline(xintercept = chi95pct.p1, label = "probability density: 95%", 
-                   hjust = 0.5, linetype = 2, color = "blue4") 
+    geom_vline(xintercept = chi95pct, linetype = 2) +
+    geom_vline(xintercept = stats$statistic) +
+    geom_label(aes(label="95% probability density"), 
+                  x = 15, y = 0.03, fill = "white") +
+    geom_segment(aes(x = 15, y = 0.057, xend = stats$statistic, yend = 0.053),
+                  arrow = arrow(length = unit(0.5, "cm"))) +
+    geom_label(aes(label=tsLabel), 
+                  x = 15, y = 0.057, fill = "white") +
   
-  
+    labs(x = xLabel.txt, y = "probability per chi-sq unit",
+      caption = paste(positionsCaption, "\nChi-Square Goodness of Fit\n",
+         "Crab spider counts in the SNH transect\n",
+         "compared to counts in the control transect\n", 
+         "sampling time = ", time, sep="")) + 
+    
+    theme_bw() + 
+    theme(legend.position="none")
   
   if (FALSE) {
   ##########################################################################
@@ -758,38 +1221,6 @@ kmPlotNew <- function(tibble, transectText, timeText) {
 
 
 ```{r cluster-functions}
-
-getWeeks <- function(data) {
-  
-  # get a vector of weeks found in the tibble of bugs
-  
-	weeks.vector <- data %>%
-   					select(week) %>%
-   					unique() %>%
-   					.$week
-
-  return(weeks.vector)
-	
-}
-
-disectWeeks <- function(w) {
-  
-  # get a vector of weeks by chopping the list of week labels
-  # 
-  
-  weeks.vector <- list()
-
-		for (i in 1:length(w)) {
-
-		  currentWeek <- substring(w[[i]], 5, 6)
-      weeks.vector[[i]] <- currentWeek
-                               
-		  }
-
-  return(weeks.vector)
-	
-}
-
 enoughData <- function(tibble, debug) {
   
   # check to see if there is enough data (non-zero spider counts)
